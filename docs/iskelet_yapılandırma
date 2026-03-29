@@ -1,0 +1,41 @@
+#29.03.2026 proje başlangıç dokümanı
+GenAI_GateAway: Proje Geliştirme Süreci ve Günlük Dokümantasyon Raporu
+Bugün, "Üretken Yapay Zeka Sistemleri İçin Çok Katmanlı Akıllı Güvenlik Ağ Geçidi" başlıklı bitirme projenizin  teorik tasarımını, çalışan ve sağlam bir yazılım mimarisine dönüştürmek için kapsamlı adımlar attık. İhtiyaç analizlerinden başlayarak sıfırdan bir Backend (Arka uç) sistemi inşa ettik ve karşılaştığımız ortam hatalarını kalıcı olarak çözdük.
+
+Aşağıda bugünkü çalışmalarımızın adım adım, detaylı bir dökümünü bulabilirsiniz:
+1. Proje Mimarisinin Yeniden Yapılandırılması (MVC Standartları)
+Geliştirme sürecinin düzenli, yönetilebilir ve profesyonel standartlarda ilerlemesi için projeyi MVC (Model-View-Controller) tasarım desenine uygun hale getirdik.
+• Klasör Yapısı: Uygulama içerisine models (Veri şemaları), controllers (İstek yönlendiriciler) ve services (Dış bağlantılar ve yapay zeka entegrasyonları) klasörleri oluşturuldu.
+• İngilizce İsimlendirme: Tüm kod blokları, değişkenler ve klasör isimleri evrensel yazılım standartlarına uygun olarak İngilizceye çevrildi.
+2. Backend Omurgasının Kurulması
+Python'un modern ve asenkron web çatısı olan FastAPI kullanılarak sistemin ana giriş kapısı (API Gateway) oluşturuldu.
+• Veri Modelleri (schemas.py): İstemciden gelecek olan PromptRequest (metin, kullanıcı ID vb.) ve sistemin döneceği standart PromptResponse (Karar, kategori, işlem süresi vb.) veri yapıları Pydantic kullanılarak modellendi.
+• Ana Çalıştırıcı (main.py): FastAPI uygulaması başlatıldı, farklı arayüzlerden (örn. Dashboard) erişim için CORS ayarları yapıldı ve sistemin ayakta olup olmadığını test eden bir health_check uç noktası yazıldı.
+• 
+Trafik Yönlendirici (security_controller.py): Sisteme gelen metinlerin sırasıyla 3 güvenlik katmanından akmasını sağlayan "Fail-Fast" (Hızlı Hata) prensibi kurgulandı.
+
+3. Çok Katmanlı Güvenlik Hattının (Pipeline) Kodlanması
+Projenin kalbini oluşturan üç katmanlı savunma stratejisi, modüler servisler halinde (app/services/) kodlandı:
+
+• 
+Katman 1: Refleks (Regex & DLP) - layer1_regex.py: Sisteme gelen isteklerin milisaniyeler içinde taranması sağlandı. Düzenli ifadeler (Regex) kullanılarak yasaklı kelimeler engellendi ve veri sızıntısını önlemek (DLP) amacıyla T.C. Kimlik, Kredi Kartı ve E-posta gibi hassas verilerin (PII) yıldızlanarak (****) maskelenmesi işlemi başarıyla kodlandı.
+
+• 
+Katman 2: Zeka (DeBERTa AI) - layer2_deberta.py: "Prompt Injection" (İstem Enjeksiyonu) saldırılarını anlamsal olarak yakalamak için Hugging Face üzerinden protectai/deberta-v3-base-prompt-injection-v2 modeli sisteme entegre edildi. Modelin 0.0 ile 1.0 arasında bir tehdit skoru üretmesi sağlandı.
+
+• 
+Katman 3: Bilgelik (LLM Yargıç) - layer3_llm_judge.py: Sadece Katman 2'nin kararsız kaldığı karmaşık durumlarda ("Gri Bölge") devreye girmesi için OpenAI GPT-4o-mini entegrasyonu yapıldı. Modele özel bir sistem komutu (System Prompt) yazılarak, sadece "SAFE" veya "UNSAFE" dönmesi garantilendi. Gerekli olan API anahtarının OpenAI platformundan nasıl alınacağı ve .env dosyasına nasıl ekleneceği netleştirildi.
+
+4. Veritabanı ve KVKK Uyumluluğu Optimizasyonu
+İlk başta bulut tabanlı Supabase kullanılması planlanmıştı. Ancak tez dokümanında belirtilen "Veri Egemenliği" ve verilerin kurum dışına çıkmaması (KVKK uyumluluğu) hedefleri doğrultusunda  mimaride stratejik bir değişikliğe gidildi.
+
+• Yerel PostgreSQL'e Geçiş: Sistem tamamen çevrimdışı ve yerel çalışacak şekilde psycopg2 kütüphanesi kullanılarak yeniden yapılandırıldı.
+• Loglama Yöneticisi (database_manager.py): Katmanlardan çıkan her bir sonucun (İzin verildi, Engellendi, Tespit edilen tehdit) Varlık-İlişki (ER) diyagramına uygun olarak  yerel veritabanına asenkron yazılması için gerekli SQL sorguları kurgulandı.
+
+5. Geliştirme Ortamı (Environment) Sorun Giderimi
+Kodlama sürecinde donanım ve işletim sistemi kaynaklı inatçı hatalar tespit edilip kalıcı olarak çözüldü:
+• Taşınmış Sanal Ortam (Path) Hatası: Projenin başka bir klasörden/kullanıcıdan taşınmasından dolayı pip komutunun eski adresleri (C:\Users\user\...) aradığı tespit edildi. Bozuk .venv klasörü zorla silindi ve fidan kullanıcısına özel, tertemiz yeni bir sanal ortam kurularak tüm kütüphaneler (fastapi, uvicorn, transformers, openai, psycopg2-binary) sıfırdan yüklendi.
+• Kaydedilmeyen Dosya Yanılgısı: main.py dosyasından supabase importu silinmesine rağmen terminalin hata vermeye devam etmesi sorunu analiz edildi. VS Code üzerinde dosya kayıt (Ctrl+S) işleminin yapılmamasından kaynaklanan bu durum, dosyaların kaydedilmesiyle çözüldü ve Uvicorn sunucusunun başarıyla ayağa kalkması sağlandı.
+
+Bir Sonraki Adım:
+Altyapısını kusursuzca kurduğumuz bu mimariyi, FastAPI'nin Swagger arayüzü (http://127.0.0.1:8000/docs) üzerinden canlı olarak test etmek ve gerçek "Prompt Injection" metinleri göndererek sistemin nasıl tepki verdiğini (loglarını) izlemektir.
