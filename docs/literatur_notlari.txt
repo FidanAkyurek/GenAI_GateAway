@@ -1,0 +1,25 @@
+LİTERATÜR TARAMASI VE RAKİP ANALİZİ
+-----------------------------------
+
+1. LASSO SECURITY
+   - Özellik: Özellikle LLM (Büyük Dil Modelleri) güvenliğine odaklanıyor.
+   - Farkımız: Onlar "Kapalı Kutu" (Kodları gizli) bir ürün satıyor. Biz ise "Şeffaf" ve akademik bir mimari sunuyoruz. Kurumlar bizim kodumuzu denetleyebilir.
+   - Pazar Payı: Generative AI Security alanında %7.9 civarında bir bilinirliğe sahip.
+
+2. LAKERA GUARD
+   - Özellik: "Gandalf" adında meşhur bir AI oyunu ile veri topluyorlar. Prompt Injection konusunda çok iyiler.
+   - Farkımız: Biz sadece injection değil, PII (Kişisel Veri) maskeleme özelliğini de sisteme gömülü sunuyoruz.
+   - Pazar Payı: Yaklaşık %6.1 pazar payı var.
+
+3. CLOUDFLARE FOR AI
+   - Özellik: "AI Gateway" adı verilen bir ürünleri var.
+   - Yetenekleri:
+     * Rate Limiting (Sorgu hızını sınırlama)
+     * Caching (Cevapları önbelleğe alma)
+     * PII Redaction (TC, Kredi kartı gizleme)
+   - Bizim Yaklaşımımız: Cloudflare genel bir bulut hizmeti sunuyor. Biz ise kurumun kendi sunucusunda (On-Premise) çalışabilecek, verinin dışarı çıkmadığı daha özel bir yapı kuruyoruz.
+
+4. JAILBREAKBENCH (Kullandığımız Veri Seti)
+   - Nedir: LLM'leri kırmak (Jailbreak) için kullanılan standart saldırı kalıplarını içeren açık kaynaklı bir kütüphane.
+   - İçerik: 100'den fazla farklı "Kötü Amaçlı Davranış" (Misuse Behaviors) örneği içerir.
+   - Önemi: Modelimizi eğitirken "Neyin saldırı olduğunu" bu setten öğreneceğiz.
