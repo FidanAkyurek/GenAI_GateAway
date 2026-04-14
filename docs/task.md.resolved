@@ -1,0 +1,18 @@
+# [ ] ADIM 1 — Bug Fix & Tam Entegrasyon
+# [x] layer1_regex.py → Layer1Result dataclass eklendi, tip uyumsuzluğu giderildi
+# [x] database_manager.py → Async SQLite/PostgreSQL, otomatik tablo oluşturma
+# [x] security_controller.py → Tüm log çağrıları aktif edildi
+# [x] main.py → lifespan, DB init, DeBERTa ön yükleme, /logs /stats /feedback
+# [x] .env + .env.example oluşturuldu
+# [x] Eksik kütüphaneler kuruldu (aiosqlite, python-dotenv)
+# [x] Layer1 birim testleri yazıldı ve 10/10 geçti
+# [x] Sunucu ayağa kalktı: http://127.0.0.1:8000
+# [x] Health check: model_loaded=true
+# [x] /analyze → BLOCK (blacklist), ALLOW+DLP (PII maskeleme), ALLOW (temiz)
+# [x] /logs → 3 kayıt DB'ye yazıldı
+
+# [ ] ADIM 2 — Eksik Endpoint'ler (/logs filtreleme, /feedback, /stats)
+# [ ] ADIM 3 — Test & Performans Ölçümü (JailbreakBench otomatik test)
+# [ ] ADIM 4 — OpenAI API Key (Katman 3 için)
+# [ ] ADIM 5 — SOC Dashboard (React + Vite)
+# [ ] ADIM 6 — Optimizasyon & Demo Hazırlama
