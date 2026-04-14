@@ -1,0 +1,35 @@
+İşte projede şu anda tamamlanmış olanlar ve geriye kalanların adım adım şeffaf bir listesi:
+
+### ✅ Şu An Tamamlanmış ve Hazır Olanlar (Yapılanlar)
+
+1. **Çekirdek Sistem ve Sunucu Kurulumu:**
+   - **FastAPI Entegrasyonu (`app/main.py`):** Uygulamanın iskeleti, yönlendirmeleri, CORS ayarları ve uygulama başlatma (lifespan) yordamları başarıyla tamamlanmış.
+   - **Uç Noktalar (Endpoints):** `/api/v1/analyze`, `/api/v1/logs`, `/api/v1/stats`, `/api/v1/health` ve `/api/v1/feedback` uç noktaları başarıyla projeye entegre edilmiş ve çalışır hâlde.
+
+2. **3 Katmanlı Güvenlik Mimarisi (Gateway):** Dokümandaki adımların tamamı backend'e kodlanmış:
+   - **Katman 1 (Refleks):** `layer1_regex.py` tasarlanmış. Gelen isteği `<5ms` içerisinde eleyen, kötü niyetli kelimeleri (Blacklist) yasaklayan ve hassas verileri (PII - T.C. Kimlik No, Kredi Kartı vb.) başarıyla maskeleyen DLP altyapısı hazır.
+   - **Katman 2 (Zeka):** `layer2_deberta.py` başarıyla eklenmiş. DeBERTa makine öğrenmesi modeli kurularak, metnin anlamsal özelliklerine (Prompt Injection saldırıları) göre puanlama sistemi kurulmuş. Eşik (threshold) değerleri ayarlanmış. 
+   - **Katman 3 (Bilgelik):** `layer3_llm_judge.py` kodlanmış. Katman 2'de şüpheli ("gri bölge") kalan manipülasyonlu komutların, GPT-4o-mini entegrasyonu ile (LLM Yargıç) kesin analizi sağlanmış.
+   - **Genel Entegre İstek Döngüsü:** Tüm bu katmanları sırasıyla bir orkestraya koyan eleme sistemi (`security_controller.py`) tamamlanmış. Gelen veri her katmanı sırasıyla geziyor ve reddedilen direkt geri döndürülüyor (Fail-Fast).
+
+3. **Veritabanı ve Log Altyapısı:**
+   - **SQLite Veritabanı:** `genai_gateway.db` sistemi kurulmuş.
+   - **Database Manager (`database_manager.py`):** İşlemlerin kaydedilmesi, veri analizi ve analiz geçmişi kayıtlarının (Log id, skorlama, maskeli prompt, vs.) tutulması için asenkron loglama sistemi başarıyla tamamlanmış. 
+
+4. **Test ve Optimizasyon Dosyaları:**
+   - Siber tehdit başarı metrikleri (JailbreakBench) dahilinde test kümeleri (`data/jailbreak_bench.csv`) sisteme tanımlanmış ve projeyle ilgili test (`tests/test_performance.py`, `tests/test_layer1.py`) süreçleri dahil edilerek çalışır bir JSON sonucu elde edilecek kıvama getirilmiş.
+
+---
+
+### ⏳ Geriye Neler Kaldı? (Yapılmayanlar / Eksikler)
+
+Dosyalarınız içerisine baktığım zaman, arka uç ve yapay zeka katmanları tamamen oturmuş görünse de kullanıcının ekranda göreceği ve dokümanınızın **"4.7. UX Tasarımları"** başlığında bahsi geçen **Kullanıcı Arayüzü (Frontend)** unsurları henüz kodlanmamış görünüyor. Kalanlar şunlardır:
+
+1. **SOC Dashboard (Grafiksel Ana Panel) Geliştirilmesi:**
+   - Şu anki yapıda sadece endpointler JSON verisi döndürüyor. Bu verileri okuyup grafikler, pasta tablolaları (Engellenen/İzin Verilen oranı) veya anlık tehdit sayılarını görebileceğimiz o UX tasarımının (React, Vue, HTML/CSS vb. bir framework kullanılarak) kodlanması gerekiyor.
+2. **Log Analiz ve Detay Sayfası:**
+   - Geçmişteki saldırı denemelerini, hangi katmana takıldıklarını (Regex mi? AI mı?), IP ve süre gibi unsurlarını filtreleyip yönettiğiniz sayfanın/tablo ekranının tasarımı yapılmalı.
+3. **Güvenlik Kuralları ve Ayarlar (Admin Ekranı):**
+   - Kodun içerisindeki `layer1_regex.py` dosyasında bulunan ya da manuel veritabanına eklenen "Yasaklı Kelimeleri" bir form aracılığıyla arayüzden ayarlayabileceğiniz ayar sayfasının oluşturulması.
+
+**Özetle:** Motor çok güzel ve çalışır biçimde inşa edilmiş fakat aracın direksiyonu ve kadranları (Kullanıcı Arayüzü/Dashboard) henüz monte edilmemiş. Eğer isterseniz, bu eksik olan **SOC Dashboard Front-end** (önyüz) kısmı.
