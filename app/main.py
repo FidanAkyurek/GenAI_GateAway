@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Depends
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import time
 import logging
@@ -9,8 +10,9 @@ from dotenv import load_dotenv
 # .env dosyasını yükle (projenin kök dizininde olmalı)
 load_dotenv()
 
-from app.controllers import security_controller
+from app.controllers import security_controller, auth_controller
 from app.services.database_manager import DatabaseManager
+from app.config_manager import ConfigManager, RulesConfig
 from app.services.layer2_deberta import Layer2DeBERTa
 
 logging.basicConfig(
@@ -30,8 +32,8 @@ async def lifespan(app: FastAPI):
     await DatabaseManager.initialize()
 
     # 2. DeBERTa modelini ön yükle (ilk istekte yavaşlık olmasın)
-    logger.info("⏳ DeBERTa modeli yükleniyor (ilk seferinde birkaç dakika sürebilir)...")
-    Layer2DeBERTa.load_model()
+    logger.info("⏳ DeBERTa modeli yükleniyor (hata nedeniyle atlandı)...")
+    # Layer2DeBERTa.load_model()
 
     logger.info("✅ Sistem hazır!")
     yield
@@ -70,6 +72,10 @@ app.add_middleware(
 
 # ── Router'ı dahil et ──────────────────────────────────────────────────────────
 app.include_router(security_controller.router, prefix="/api/v1")
+app.include_router(auth_controller.router, prefix="/api/v1/auth")
+
+# ── Frontend (Dashboard) ───────────────────────────────────────────────────────
+app.mount("/dashboard", StaticFiles(directory="frontend", html=True), name="dashboard")
 
 
 # ── Kök & Health Endpoint'leri ─────────────────────────────────────────────────
@@ -129,3 +135,17 @@ async def submit_feedback(log_id: str, correct_label: str):
     """
     success = await DatabaseManager.save_feedback(log_id, correct_label)
     return {"success": success, "message": f"Feedback kaydedildi: {log_id} → {correct_label}"}
+
+# ── Ayarlar (Kurallar) Endpoint'leri ───────────────────────────────────────────
+@app.get("/api/v1/rules", tags=["Rules"])
+async def get_rules():
+    """Mevcut güvenlik ayarlarını getirir."""
+    return ConfigManager.load_config()
+
+@app.post("/api/v1/rules", tags=["Rules"])
+async def update_rules(config: RulesConfig):
+    """Güvenlik ayarlarını günceller."""
+    success = ConfigManager.save_config(config)
+    if success:
+        return {"success": True, "message": "Ayarlar güncellendi."}
+    return {"success": False, "message": "Ayarlar kaydedilemedi."}

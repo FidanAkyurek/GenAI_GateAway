@@ -53,7 +53,7 @@ class Layer1Regex:
     IBAN_PATTERN = re.compile(r'\bTR\d{2}[0-9A-Z]{22}\b', re.IGNORECASE)
 
     @classmethod
-    def scan(cls, text: str) -> Layer1Result:
+    def scan(cls, text: str, dynamic_blacklist: list = None) -> Layer1Result:
         """
         Metni yasaklı kelimeler ve PII açısından tarar.
         Dönüş: Layer1Result(is_blocked, has_pii, processed_text)
@@ -64,8 +64,9 @@ class Layer1Regex:
 
         # 1. Blacklist (Yasaklı Kelime) Kontrolü
         text_lower = text.lower()
-        for word in cls.BLACKLIST:
-            if word in text_lower:
+        words_to_check = dynamic_blacklist if dynamic_blacklist is not None else cls.BLACKLIST
+        for word in words_to_check:
+            if word.lower() in text_lower:
                 is_blocked = True
                 # Fail-Fast: Yasaklı kelime → hemen engelle, maskelemeye gerek yok
                 return Layer1Result(is_blocked=True, has_pii=False, processed_text=text)

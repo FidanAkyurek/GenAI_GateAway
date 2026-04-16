@@ -37,6 +37,20 @@ class DatabaseManager:
         )
     """
 
+    CREATE_USERS_TABLE_SQL = """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT,
+            phone TEXT,
+            full_name TEXT DEFAULT '',
+            profile_photo TEXT,
+            role TEXT DEFAULT 'user',
+            password_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """
+
     # ─── PostgreSQL BAĞLANTISI ─────────────────────────────────────────────────
     @classmethod
     async def init_postgres(cls):
@@ -53,6 +67,21 @@ class DatabaseManager:
             )
             async with cls._pool.acquire() as conn:
                 await conn.execute(cls.CREATE_TABLE_SQL)
+                # Note: AUTOINCREMENT is sqlite specific, PostgreSQL uses SERIAL
+                pg_create_users = """
+                    CREATE TABLE IF NOT EXISTS users (
+                        id SERIAL PRIMARY KEY,
+                        username TEXT UNIQUE NOT NULL,
+                        email TEXT,
+                        phone TEXT,
+                        full_name TEXT DEFAULT '',
+                        profile_photo TEXT,
+                        role TEXT DEFAULT 'user',
+                        password_hash TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    )
+                """
+                await conn.execute(pg_create_users)
             logger.info("✅ PostgreSQL bağlantısı ve tablo başarıyla hazırlandı.")
         except Exception as e:
             logger.error(f"❌ PostgreSQL bağlantı hatası: {e}")
@@ -65,6 +94,7 @@ class DatabaseManager:
         try:
             async with aiosqlite.connect(SQLITE_PATH) as db:
                 await db.execute(cls.CREATE_TABLE_SQL)
+                await db.execute(cls.CREATE_USERS_TABLE_SQL)
                 await db.commit()
             cls._sqlite_initialized = True
             logger.info(f"✅ SQLite veritabanı hazırlandı: {SQLITE_PATH}")
@@ -242,3 +272,112 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"❌ Stats hatası: {e}")
             return {}
+
+    # ─── KULLANICI (AUTH) YÖNETİMİ ──────────────────────────────────────────────
+    @classmethod
+    async def create_user(
+        cls, 
+        username: str, 
+        password_hash: str, 
+        email: str = None, 
+        phone: str = None, 
+        full_name: str = "", 
+        role: str = "user"
+    ) -> bool:
+        """Yeni bir kullanıcı oluşturur."""
+        created_at = datetime.now().isoformat()
+        if USE_SQLITE:
+            try:
+                async with aiosqlite.connect(SQLITE_PATH) as db:
+                    await db.execute(
+                        """INSERT INTO users (username, password_hash, email, phone, full_name, role, created_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        (username, password_hash, email, phone, full_name, role, created_at)
+                    )
+                    await db.commit()
+                return True
+            except Exception as e:
+                logger.error(f"❌ Kullanıcı oluşturma hatası (SQLite): {e}")
+                return False
+        else:
+            if not cls._pool: return False
+            try:
+                async with cls._pool.acquire() as conn:
+                    await conn.execute(
+                        """INSERT INTO users (username, password_hash, email, phone, full_name, role, created_at)
+                           VALUES ($1, $2, $3, $4, $5, $6, $7)""",
+                        username, password_hash, email, phone, full_name, role, created_at
+                    )
+                return True
+            except Exception as e:
+                logger.error(f"❌ Kullanıcı oluşturma hatası (PostgreSQL): {e}")
+                return False
+
+    @classmethod
+    async def get_user_by_username(cls, username: str) -> Optional[dict]:
+        """Kullanıcı ismine göre kullanıcı bilgisini getirir."""
+        if USE_SQLITE:
+            try:
+                async with aiosqlite.connect(SQLITE_PATH) as db:
+                    db.row_factory = aiosqlite.Row
+                    async with db.execute("SELECT * FROM users WHERE username = ?", (username,)) as cursor:
+                        row = await cursor.fetchone()
+                        return dict(row) if row else None
+            except Exception as e:
+                logger.error(f"❌ Kullanıcı getirme hatası: {e}")
+                return None
+        else:
+            if not cls._pool: return None
+            try:
+                async with cls._pool.acquire() as conn:
+                    row = await conn.fetchrow("SELECT * FROM users WHERE username = $1", username)
+                    return dict(row) if row else None
+            except Exception as e:
+                logger.error(f"❌ Kullanıcı getirme hatası: {e}")
+                return None
+
+    @classmethod
+    async def update_user_profile(cls, username: str, update_data: dict) -> bool:
+        """Kullanıcı profil verilerini (email, phone, full_name, profile_photo) günceller."""
+        if not update_data: return True
+        
+        sets = []
+        values = []
+        for i, (k, v) in enumerate(update_data.items()):
+            sets.append(f"{k} = {'?' if USE_SQLITE else f'${i+1}'}")
+            values.append(v)
+            
+        values.append(username)
+        where_clause = f"username = {'?' if USE_SQLITE else f'${len(values)}'}"
+        
+        query = f"UPDATE users SET {', '.join(sets)} WHERE {where_clause}"
+        
+        try:
+            if USE_SQLITE:
+                async with aiosqlite.connect(SQLITE_PATH) as db:
+                    await db.execute(query, tuple(values))
+                    await db.commit()
+            else:
+                async with cls._pool.acquire() as conn:
+                    await conn.execute(query, *values)
+            return True
+        except Exception as e:
+            logger.error(f"❌ Profil güncelleme hatası: {e}")
+            return False
+
+    @classmethod
+    async def update_user_password(cls, username: str, password_hash: str) -> bool:
+        """Kullanıcının şifresini günceller."""
+        query = "UPDATE users SET password_hash = ? WHERE username = ?" if USE_SQLITE else "UPDATE users SET password_hash = $1 WHERE username = $2"
+        try:
+            if USE_SQLITE:
+                async with aiosqlite.connect(SQLITE_PATH) as db:
+                    await db.execute(query, (password_hash, username))
+                    await db.commit()
+            else:
+                async with cls._pool.acquire() as conn:
+                    await conn.execute(query, password_hash, username)
+            return True
+        except Exception as e:
+            logger.error(f"❌ Şifre güncelleme hatası: {e}")
+            return False

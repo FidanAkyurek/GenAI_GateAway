@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+python-dotenv
+aiofiles
+asyncpg
+aiosqlite
+transformers
+torch
+openai
+pydantic
+passlib[bcrypt]
+pyjwt
