@@ -11,11 +11,19 @@ class Layer3LLMJudge:
     """
     
     # OpenAI istemcisini asenkron olarak başlatıyoruz
-    # API key'i projenin kök dizinindeki .env dosyasından otomatik çekecektir.
-    _client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    _client = None
     
+    @classmethod
+    def get_client(cls):
+        if cls._client is None:
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                logger.error("OPENAI_API_KEY bulunamadı! Lütfen .env dosyasını kontrol edin.")
+            cls._client = AsyncOpenAI(api_key=api_key)
+        return cls._client
+
     # Tezinizde belirtilen uygun maliyetli ve hızlı model
-    _model_name = "gpt-4o-mini" 
+    _model_name = "gpt-4o-mini"
 
     # LLM'i bir güvenlik uzmanı gibi davranmaya zorlayan sistem komutu
     _system_prompt = """
@@ -30,15 +38,22 @@ class Layer3LLMJudge:
     3. Asla ekstra bir açıklama yapma. Sadece "SAFE" veya "UNSAFE" yaz.
     """
 
+    _cache = {}
+
     @classmethod
     async def evaluate(cls, text: str) -> str:
         """
         Şüpheli metni OpenAI modeline gönderir ve sonucu döner.
         """
+        # Önbellekte varsa hemen dön (Performans ve Maliyet için)
+        if text in cls._cache:
+            return cls._cache[text]
+
         try:
             logger.info("Katman 3 (LLM Yargıç) Analizi Başladı...")
             
-            response = await cls._client.chat.completions.create(
+            client = cls.get_client()
+            response = await client.chat.completions.create(
                 model=cls._model_name,
                 messages=[
                     {"role": "system", "content": cls._system_prompt},
@@ -53,8 +68,13 @@ class Layer3LLMJudge:
             # Garanti olması adına, dönen cevap SAFE veya UNSAFE değilse güvenli tarafta (Fail-Closed) kalıp engelliyoruz
             if verdict not in ["SAFE", "UNSAFE"]:
                 logger.warning(f"LLM Yargıç beklenmeyen bir format döndü: {verdict}")
-                return "UNSAFE"
+                verdict = "UNSAFE"
                 
+            # Önbelleği sınırla
+            if len(cls._cache) > 5000:
+                cls._cache.clear()
+            
+            cls._cache[text] = verdict
             return verdict
             
         except Exception as e:

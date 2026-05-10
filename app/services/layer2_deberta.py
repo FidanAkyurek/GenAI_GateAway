@@ -35,11 +35,17 @@ class Layer2DeBERTa:
                 logger.error(f"Model yüklenirken hata oluştu: {e}")
                 cls._classifier = None
 
+    _cache = {}
+
     @classmethod
     def predict_score(cls, text: str) -> float:
         """
         Metni analiz edip 0.0 (Güvenli) ile 1.0 (Kesin Saldırı) arasında bir skor döner.
         """
+        # Önbellekte varsa hemen dön (Performans için)
+        if text in cls._cache:
+            return cls._cache[text]
+
         if cls._classifier is None:
             cls.load_model()
             
@@ -59,4 +65,11 @@ class Layer2DeBERTa:
             elif res['label'] == 'SAFE':
                 score = 1.0 - res['score']
                 
-        return round(score, 3)
+        final_score = round(score, 3)
+        
+        # Önbelleği sınırla (Memory Leak önlemek için)
+        if len(cls._cache) > 5000:
+            cls._cache.clear()
+            
+        cls._cache[text] = final_score
+        return final_score

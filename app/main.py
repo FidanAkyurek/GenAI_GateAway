@@ -148,4 +148,4 @@ async def update_rules(config: RulesConfig):
     success = ConfigManager.save_config(config)
     if success:
         return {"success": True, "message": "Ayarlar güncellendi."}
-    return {"success": False, "message": "Ayarlar kaydedilemedi."}
+    return {"success": False, "message": "Ayarlar kaydedilemedi."}

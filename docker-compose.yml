@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    container_name: genai_gateway_web
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - USE_SQLITE=false
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=genai_gateway
+      - DB_USER=postgres
+      - DB_PASSWORD=gateway_password
+    env_file:
+      - .env
+    volumes:
+      # Cache HuggingFace models so they don't re-download every time the container starts
+      - hf_cache:/root/.cache/huggingface
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    container_name: genai_gateway_db
+    environment:
+      - POSTGRES_DB=genai_gateway
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=gateway_password
+    ports:
+      - "5433:5432" # Use 5433 on host in case 5432 is taken by local postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d genai_gateway"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  hf_cache:
