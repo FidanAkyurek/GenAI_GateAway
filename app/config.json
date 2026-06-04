@@ -1,7 +1,7 @@
 {
     "layer_regex": true,
     "layer_deberta": true,
-    "layer_llm": true,
+    "layer_llm": false,
     "ai_threshold": 0.65,
     "blacklist": [
         "bomba",

@@ -1,0 +1,39 @@
+31.05 23.00 yapılan şeyler
+1. 🧠 Sürekli Sohbet (Conversational Memory) Belleğinin Eklenmesi
+Çözüm & Yapılan Değişiklikler:
+
+Backend Şema Güncellemesi (schemas.py): Kullanıcıdan gelen isteklere (PromptRequest) conversation_history (sohbet geçmişi) adında yeni bir veri yapısı eklendi.
+LLM Proxy Güncellemesi (llm_proxy.py): Google Gemini API'sine istek atılırken artık sadece son soruyu değil, kullanıcının daha önce sorduğu tüm soruları ve yapay zekanın verdiği yanıtları types.Content(role="user"/"model") formatında API'ye gönderdik.
+Syntax Hata Çözümü: Google'ın en yeni google-genai kütüphanesindeki katı kural (positional argument error) tespit edildi ve Part.from_text(text="...") şeklinde isimlendirilmiş parametre kullanılarak çözüldü.
+Sonuç: Tıpkı ChatGPT gibi geçmişi hatırlayan, bağlamdan kopmayan akıllı bir asistan elde edildi.
+2. 🎛️ Dinamik Katman (Layer) Kontrolü ve Görselleştirilmesi
+Sorun: Sistemin 3 güvenlik katmanı (Regex, DeBERTa, LLM Judge) arka planda çalışıyordu ancak arayüzde (Frontend) hangi katmanın aktif olduğu veya prompt'un hangi katmandan geçerek güvenli ilan edildiği net bir şekilde görülmüyordu.
+
+Çözüm & Yapılan Değişiklikler:
+
+Frontend (streamlit_app.py): Yan panel (Sidebar) oluşturularak Katman 1, 2 ve 3 için Açma/Kapama (Toggle) düğmeleri eklendi.
+Backend İletişimi: Bu düğmelerin durumları JSON paketi olarak (active_layers) doğrudan güvenlik kontrolcüsüne (security_controller.py) bağlandı. Arka plan artık arayüzdeki düğmelere göre çalışmaya başladı.
+Görsel Geri Bildirim: Yapay zeka cevap verdiğinde altına dinamik bir bilgi kutusu eklendi. Örneğin sadece 1. ve 3. katman açıksa arayüze: "✅ Katman 1 (Regex) ve Katman 3 (LLM Yargıç) filtrelerinden geçerek güvenli bulunmuştur." yazdırıldı. Bu sayede projenin jüriye sunumu çok daha etkileşimli hale getirildi.
+3. 🛡️ Google Gemini API "Rate Limit" (Hız Sınırı) Krizinin Çözülmesi
+Sorun: Geliştirme sırasında art arda hızlı sorular sorulduğunda Google API'si çöktü ve arayüzde çirkin, devasa kırmızı Python hata blokları belirdi (429 RESOURCE_EXHAUSTED veya Quota Exceeded). Sistemin tamamen kilitlenmesine neden oldu.
+
+Çözüm & Yapılan Değişiklikler:
+
+Graceful Exception Handling: Hem layer3_llm_judge.py hem de llm_proxy.py dosyalarında try-except blokları güçlendirildi. Eğer 429 hatası alınırsa sistemin çökmesi yerine kullanıcıya şık bir chat balonu içerisinde: "⏱️ Hız Sınırı Aşıldı: Lütfen 1 dakika bekleyin" mesajı verilmesi sağlandı.
+Sıfır Kota (Limit: 0) Krizinin Aşılması: Kullanılan Google Cloud API anahtarında gemini-2.0-flash ve gemini-2.5-flash gibi yeni modeller için ücretsiz kotanın 0 olduğu tespit edildi.
+Dinamik Model Bypass: Sistemi spesifik kısıtlı sürümlere bağlamak yerine, Google'ın o an API anahtarı için ücretsiz havuzda en uygun bulduğu modele bağlayan gemini-flash-latest joker modeli sisteme entegre edildi. Bu sayede günde 1.500 istek (15 RPM) limitine ulaşılarak hız sınırı sorunu kökünden çözüldü.
+4. 🚀 SOC Dashboard'a Tek Tuşla Hızlı Başlatma Butonu
+Sorun: Uygulamayı sunarken veya kullanırken, arka planı (Uvicorn) ve görsel arayüzü (Streamlit) ayrı ayrı terminallerden başlatmak zor ve yorucuydu.
+
+Çözüm & Yapılan Değişiklikler:
+
+Subprocess Entegrasyonu (main.py): FastAPI sunucusuna /api/v1/start-frontend adında yeni bir uç nokta (endpoint) eklendi. Bu sistem, Python'un subprocess kütüphanesini kullanarak arka planda kendi kendine yeni bir terminal açıp streamlit run streamlit_app.py komutunu çalıştırabilme yeteneği kazandı.
+Yönlendirme (Routing) Çakışması: FastAPI'nin StaticFiles (HTML host) mekanizması yeni API uç noktasını engelliyordu (Method Not Allowed). Kod mimarisi düzeltilerek route sıralamaları ayarlandı.
+Frontend (index.html & app.js): SOC Paneline şık bir "Sohbet (Chat) Arayüzü" butonu eklendi. Tıklandığında kendi kendine Streamlit'i başlatıp kullanıcıyı anında yeni sekmede sohbet ekranına yönlendirmesi sağlandı. Tarayıcı önbellek (cache) sorunu JavaScript sürüm numarası (v=8) artırılarak aşıldı.
+
+"Yarı-Canlı Mod" (Semi-live mode) Nedir?
+Dashboard'dayken her yeni log düştüğünde sayfayı elle yenilemeniz (F5 yapmanız) gerekmesin diye koyduğumuz otomatik bir sistemdir. O butona bastığınızda renk değiştirir ve aktif olur; arka planda her 5 saniyede bir gidip veritabanına bakar. Yeni bir sızıntı denemesi (Log) geldiyse tabloyu ve grafikleri kendi kendine günceller.
+Yani ekranı açık bırakıp kahvenizi yudumlarken saldırıların ekrana canlı canlı düşmesini izleyebilirsiniz. Tekrar bastığınızda ise bu otomatik yenilemeyi durdurur.
+
+GECE GÜNDÜZ MODU:
+akıllı bir sistem, Gündüz moduna geçip sekmeyi kapatsanız bile, bilgisayarınız bunu hafızasına kaydeder ve yarın tekrar girdiğinizde doğrudan gündüz moduyla açılır

@@ -1,23 +1,28 @@
 import asyncio
 import asyncpg
 import os
-from dotenv import load_dotenv
 
-load_dotenv()
-
-async def test_connection():
+async def test_pg():
     try:
         conn = await asyncpg.connect(
-            host=os.getenv("DB_HOST", "localhost"),
-            port=int(os.getenv("DB_PORT", "5432")),
-            database=os.getenv("DB_NAME", "genai_gateway"),
-            user=os.getenv("DB_USER", "postgres"),
-            password=os.getenv("DB_PASSWORD", "")
+            user="postgres",
+            password="Fa226021",
+            database="postgres",
+            host="localhost",
+            port=5432
         )
-        print("SUCCESS")
+        print("Connected to PostgreSQL successfully!")
+        
+        # Create database if it doesn't exist
+        try:
+            await conn.execute("CREATE DATABASE genai_gateway")
+            print("Database genai_gateway created!")
+        except Exception as e:
+            print(f"DB might already exist: {e}")
+            
         await conn.close()
     except Exception as e:
-        print(f"FAILED: {e}")
+        print(f"Failed to connect to PostgreSQL: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(test_connection())
+    asyncio.run(test_pg())

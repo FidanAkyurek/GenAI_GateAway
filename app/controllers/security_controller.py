@@ -8,6 +8,7 @@ from app.services.layer1_regex import Layer1Regex
 # from app.services.layer2_deberta import Layer2DeBERTa  # Disable DeBERTa to avoid MKL crash
 from app.services.layer3_llm_judge import Layer3LLMJudge
 from app.services.database_manager import DatabaseManager
+from app.services.llm_proxy import LLMProxy
 from app.config_manager import ConfigManager
 from app.controllers.auth_controller import verify_admin
 
@@ -54,6 +55,7 @@ async def analyze_prompt(request: PromptRequest):
             return PromptResponse(
                 log_id=log_id, status="BLOCK", category="Blacklist",
                 reason="Yasaklı kelime tespit edildi.",
+                active_layers={"layer1": config.layer_regex, "layer2": config.layer_deberta, "layer3": config.layer_llm},
                 latency_ms=latency
             )
 
@@ -91,6 +93,7 @@ async def analyze_prompt(request: PromptRequest):
             return PromptResponse(
                 log_id=log_id, status="BLOCK", category="Injection",
                 reason=f"Saldırı girişimi tespit edildi. (AI Skoru: {ai_score:.2f})",
+                active_layers={"layer1": config.layer_regex, "layer2": config.layer_deberta, "layer3": config.layer_llm},
                 latency_ms=latency
             )
     else:
@@ -102,7 +105,7 @@ async def analyze_prompt(request: PromptRequest):
     # Fail-Fast: Layer 1 geçtiyse Layer 3 kontrol eder
     # ══════════════════════════════════════════════════════════
     if config.layer_llm:
-        llm_verdict = await Layer3LLMJudge.evaluate(processed_text)
+        llm_verdict = await Layer3LLMJudge.evaluate(processed_text, request.conversation_history)
         logger.info(f"⚖️ LLM Yargıç kararı: {llm_verdict} | user={request.user_id}")
 
         if llm_verdict == "UNSAFE":
@@ -118,6 +121,7 @@ async def analyze_prompt(request: PromptRequest):
             return PromptResponse(
                 log_id=log_id, status="BLOCK", category="Policy Violation",
                 reason="LLM Yargıç karmaşık bir manipülasyon (Jailbreak) tespit etti.",
+                active_layers={"layer1": config.layer_regex, "layer2": config.layer_deberta, "layer3": config.layer_llm},
                 latency_ms=latency
             )
 
@@ -134,11 +138,16 @@ async def analyze_prompt(request: PromptRequest):
         category=category, stopped_at_layer=stopped_at_layer,
         ai_score=ai_score, latency_ms=latency
     )
-    logger.info(f"✅ ALLOW [{category}] | {latency}ms")
+    logger.info(f"✅ ALLOW [{category}] | Security Latency: {latency}ms")
+
+    # Yapay zeka'dan cevabı al (sohbet geçmişiyle birlikte)
+    llm_response_text = await LLMProxy.generate_response(processed_text, request.conversation_history)
 
     return PromptResponse(
         log_id=log_id, status="ALLOW", category=category,
         processed_text=processed_text,
+        llm_response=llm_response_text,
+        active_layers={"layer1": config.layer_regex, "layer2": config.layer_deberta, "layer3": config.layer_llm},
         latency_ms=latency
     )
 

@@ -23,17 +23,28 @@ class DatabaseManager:
     _sqlite_initialized: bool = False
 
     # ─── TABLO OLUŞTURMA SQL ───────────────────────────────────────────────────
+    CREATE_COMPANIES_TABLE_SQL = """
+        CREATE TABLE IF NOT EXISTS companies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            domain TEXT,
+            created_at TEXT NOT NULL
+        )
+    """
+
     CREATE_TABLE_SQL = """
         CREATE TABLE IF NOT EXISTS security_logs (
             log_id              TEXT PRIMARY KEY,
             user_id             TEXT NOT NULL,
+            company_id          INTEGER,
             masked_prompt       TEXT,
             action              TEXT NOT NULL,
             category            TEXT NOT NULL,
             stopped_at_layer    TEXT,
             ai_confidence_score REAL DEFAULT 0.0,
             latency_ms          INTEGER DEFAULT 0,
-            created_at          TEXT NOT NULL
+            created_at          TEXT NOT NULL,
+            FOREIGN KEY (company_id) REFERENCES companies(id)
         )
     """
 
@@ -45,9 +56,12 @@ class DatabaseManager:
             phone TEXT,
             full_name TEXT DEFAULT '',
             profile_photo TEXT,
-            role TEXT DEFAULT 'user',
+            role TEXT DEFAULT 'employee',
+            company_id INTEGER,
             password_hash TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            department TEXT DEFAULT '',
+            FOREIGN KEY (company_id) REFERENCES companies(id)
         )
     """
 
@@ -76,7 +90,33 @@ class DatabaseManager:
                 max_size=10,
             )
             async with cls._pool.acquire() as conn:
-                await conn.execute(cls.CREATE_TABLE_SQL)
+                pg_create_companies = """
+                    CREATE TABLE IF NOT EXISTS companies (
+                        id SERIAL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        domain TEXT,
+                        created_at TEXT NOT NULL
+                    )
+                """
+                await conn.execute(pg_create_companies)
+                
+                pg_create_logs = """
+                    CREATE TABLE IF NOT EXISTS security_logs (
+                        log_id              TEXT PRIMARY KEY,
+                        user_id             TEXT NOT NULL,
+                        company_id          INTEGER,
+                        masked_prompt       TEXT,
+                        action              TEXT NOT NULL,
+                        category            TEXT NOT NULL,
+                        stopped_at_layer    TEXT,
+                        ai_confidence_score REAL DEFAULT 0.0,
+                        latency_ms          INTEGER DEFAULT 0,
+                        created_at          TEXT NOT NULL,
+                        FOREIGN KEY (company_id) REFERENCES companies(id)
+                    )
+                """
+                await conn.execute(pg_create_logs)
+                
                 # Note: AUTOINCREMENT is sqlite specific, PostgreSQL uses SERIAL
                 pg_create_users = """
                     CREATE TABLE IF NOT EXISTS users (
@@ -86,12 +126,19 @@ class DatabaseManager:
                         phone TEXT,
                         full_name TEXT DEFAULT '',
                         profile_photo TEXT,
-                        role TEXT DEFAULT 'user',
+                        role TEXT DEFAULT 'employee',
+                        company_id INTEGER,
                         password_hash TEXT NOT NULL,
-                        created_at TEXT NOT NULL
+                        created_at TEXT NOT NULL,
+                        department TEXT DEFAULT '',
+                        FOREIGN KEY (company_id) REFERENCES companies(id)
                     )
                 """
                 await conn.execute(pg_create_users)
+                try:
+                    await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS department TEXT DEFAULT ''")
+                except Exception:
+                    pass
                 
                 pg_create_feedback = """
                     CREATE TABLE IF NOT EXISTS feedback_logs (
@@ -114,8 +161,13 @@ class DatabaseManager:
         """SQLite veritabanını ve tabloyu oluşturur."""
         try:
             async with aiosqlite.connect(SQLITE_PATH) as db:
+                await db.execute(cls.CREATE_COMPANIES_TABLE_SQL)
                 await db.execute(cls.CREATE_TABLE_SQL)
                 await db.execute(cls.CREATE_USERS_TABLE_SQL)
+                try:
+                    await db.execute('ALTER TABLE users ADD COLUMN department TEXT DEFAULT ""')
+                except Exception:
+                    pass
                 await db.execute(cls.CREATE_FEEDBACK_TABLE_SQL)
                 await db.commit()
             cls._sqlite_initialized = True
@@ -131,6 +183,30 @@ class DatabaseManager:
             await cls.init_sqlite()
         else:
             await cls.init_postgres()
+            
+        await cls.seed_super_admin()
+
+    @classmethod
+    async def seed_super_admin(cls):
+        """Sistemin kurucusu (Süper Admin) yoksa oluşturur."""
+        try:
+            super_admin = await cls.get_user_by_username("superadmin")
+            if not super_admin:
+                # passlib'i direkt dahil etmek yerine buraya import ekleyelim veya plain_hash atalım
+                # ancak DB katmanında hash yapmamak daha iyi, o yüzden varsayılan olarak basir bir bcrypt stringi
+                # koyacağız veya doğrudan auth controller üzerinden bu seed fonksiyonunu çağırabiliriz.
+                # Daha temiz olması için varsayılan şifre "superadmin123" olacak. 
+                # (bcrypt hash'i $2b$12$R.S.s3Kxk4162G8q.9m/yOg5mQZlU4/GfF6xT7N5eCxg6K.Hq2Btm -> 'superadmin123')
+                default_hash = "$2b$12$R.S.s3Kxk4162G8q.9m/yOg5mQZlU4/GfF6xT7N5eCxg6K.Hq2Btm"
+                await cls.create_user(
+                    username="superadmin",
+                    password_hash=default_hash,
+                    full_name="Funda & Fidan (Kurucu)",
+                    role="super_admin"
+                )
+                logger.info("👑 Süper Admin hesabı tohumlandı. (Kullanıcı: superadmin, Şifre: superadmin123)")
+        except Exception as e:
+            logger.error(f"❌ Süper admin tohumlama hatası: {e}")
 
     # ─── LOG KAYDETME ─────────────────────────────────────────────────────────
     @classmethod
@@ -144,32 +220,33 @@ class DatabaseManager:
         stopped_at_layer: str,
         ai_score: float,
         latency_ms: int,
+        company_id: Optional[int] = None
     ):
         """Güvenlik olayını asenkron olarak veritabanına yazar."""
         created_at = datetime.now().isoformat()
 
         if USE_SQLITE:
             await cls._log_sqlite(
-                log_id, user_id, masked_prompt, action,
+                log_id, user_id, company_id, masked_prompt, action,
                 category, stopped_at_layer, ai_score, latency_ms, created_at
             )
         else:
             await cls._log_postgres(
-                log_id, user_id, masked_prompt, action,
+                log_id, user_id, company_id, masked_prompt, action,
                 category, stopped_at_layer, ai_score, latency_ms, created_at
             )
 
     @classmethod
-    async def _log_sqlite(cls, log_id, user_id, masked_prompt, action,
+    async def _log_sqlite(cls, log_id, user_id, company_id, masked_prompt, action,
                           category, stopped_at_layer, ai_score, latency_ms, created_at):
         try:
             async with aiosqlite.connect(SQLITE_PATH) as db:
                 await db.execute(
                     """INSERT INTO security_logs
-                       (log_id, user_id, masked_prompt, action, category,
+                       (log_id, user_id, company_id, masked_prompt, action, category,
                         stopped_at_layer, ai_confidence_score, latency_ms, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (log_id, user_id, masked_prompt, action, category,
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (log_id, user_id, company_id, masked_prompt, action, category,
                      stopped_at_layer, ai_score, latency_ms, created_at)
                 )
                 await db.commit()
@@ -178,7 +255,7 @@ class DatabaseManager:
             logger.error(f"❌ SQLite log hatası: {e}")
 
     @classmethod
-    async def _log_postgres(cls, log_id, user_id, masked_prompt, action,
+    async def _log_postgres(cls, log_id, user_id, company_id, masked_prompt, action,
                              category, stopped_at_layer, ai_score, latency_ms, created_at):
         if not cls._pool:
             logger.warning("⚠️ PostgreSQL bağlantısı yok, log atlanıyor.")
@@ -187,10 +264,10 @@ class DatabaseManager:
             async with cls._pool.acquire() as conn:
                 await conn.execute(
                     """INSERT INTO security_logs
-                       (log_id, user_id, masked_prompt, action, category,
+                       (log_id, user_id, company_id, masked_prompt, action, category,
                         stopped_at_layer, ai_confidence_score, latency_ms, created_at)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
-                    log_id, user_id, masked_prompt, action, category,
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)""",
+                    log_id, user_id, company_id, masked_prompt, action, category,
                     stopped_at_layer, ai_score, latency_ms, created_at
                 )
                 logger.info(f"📝 Log kaydedildi → {log_id} | {action} ({category})")
@@ -200,18 +277,26 @@ class DatabaseManager:
     # ─── LOG LİSTELEME ────────────────────────────────────────────────────────
     @classmethod
     async def get_logs(cls, limit: int = 50, action_filter: Optional[str] = None,
-                       category_filter: Optional[str] = None) -> list:
+                       category_filter: Optional[str] = None,
+                       company_id: Optional[int] = None,
+                       user_id: Optional[str] = None) -> list:
         """Log kayıtlarını filtreli olarak getirir."""
         if USE_SQLITE:
-            return await cls._get_logs_sqlite(limit, action_filter, category_filter)
+            return await cls._get_logs_sqlite(limit, action_filter, category_filter, company_id, user_id)
         else:
-            return await cls._get_logs_postgres(limit, action_filter, category_filter)
+            return await cls._get_logs_postgres(limit, action_filter, category_filter, company_id, user_id)
 
     @classmethod
-    async def _get_logs_sqlite(cls, limit, action_filter, category_filter) -> list:
+    async def _get_logs_sqlite(cls, limit, action_filter, category_filter, company_id, user_id=None) -> list:
         try:
             query = "SELECT * FROM security_logs WHERE 1=1"
             params = []
+            if company_id is not None:
+                query += " AND company_id = ?"
+                params.append(company_id)
+            if user_id is not None:
+                query += " AND user_id = ?"
+                params.append(user_id)
             if action_filter:
                 query += " AND action = ?"
                 params.append(action_filter.upper())
@@ -231,13 +316,21 @@ class DatabaseManager:
             return []
 
     @classmethod
-    async def _get_logs_postgres(cls, limit, action_filter, category_filter) -> list:
+    async def _get_logs_postgres(cls, limit, action_filter, category_filter, company_id, user_id=None) -> list:
         if not cls._pool:
             return []
         try:
             query = "SELECT * FROM security_logs WHERE 1=1"
             params = []
             i = 1
+            if company_id is not None:
+                query += f" AND company_id = ${i}"
+                params.append(company_id)
+                i += 1
+            if user_id is not None:
+                query += f" AND user_id = ${i}"
+                params.append(user_id)
+                i += 1
             if action_filter:
                 query += f" AND action = ${i}"
                 params.append(action_filter.upper())
@@ -267,24 +360,43 @@ class DatabaseManager:
 
     # ─── İSTATİSTİKLER ────────────────────────────────────────────────────────
     @classmethod
-    async def get_stats(cls) -> dict:
+    async def get_stats(cls, company_id: Optional[int] = None, user_id: Optional[str] = None) -> dict:
         """Dashboard için özet istatistikleri döner."""
         if USE_SQLITE:
-            return await cls._get_stats_sqlite()
-        return {}
+            return await cls._get_stats_sqlite(company_id, user_id)
+        return await cls._get_stats_postgres(company_id, user_id)
 
     @classmethod
-    async def _get_stats_sqlite(cls) -> dict:
+    async def _get_stats_sqlite(cls, company_id, user_id=None) -> dict:
         try:
             async with aiosqlite.connect(SQLITE_PATH) as db:
-                async with db.execute("SELECT COUNT(*) FROM security_logs") as c:
+                conditions = []
+                params = []
+                if company_id is not None:
+                    conditions.append("company_id = ?")
+                    params.append(company_id)
+                if user_id is not None:
+                    conditions.append("user_id = ?")
+                    params.append(user_id)
+                
+                where_clause = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+                
+                async with db.execute(f"SELECT COUNT(*) FROM security_logs{where_clause}", params) as c:
                     total = (await c.fetchone())[0]
-                async with db.execute("SELECT COUNT(*) FROM security_logs WHERE action='BLOCK'") as c:
+                
+                block_conditions = ["action='BLOCK'"] + conditions
+                block_where = " WHERE " + " AND ".join(block_conditions)
+                async with db.execute(f"SELECT COUNT(*) FROM security_logs{block_where}", params) as c:
                     blocked = (await c.fetchone())[0]
-                async with db.execute("SELECT COUNT(*) FROM security_logs WHERE action='ALLOW'") as c:
+                
+                allow_conditions = ["action='ALLOW'"] + conditions
+                allow_where = " WHERE " + " AND ".join(allow_conditions)
+                async with db.execute(f"SELECT COUNT(*) FROM security_logs{allow_where}", params) as c:
                     allowed = (await c.fetchone())[0]
-                async with db.execute("SELECT AVG(latency_ms) FROM security_logs") as c:
+                
+                async with db.execute(f"SELECT AVG(latency_ms) FROM security_logs{where_clause}", params) as c:
                     avg_latency = (await c.fetchone())[0] or 0
+                    
                 return {
                     "total_requests": total,
                     "blocked": blocked,
@@ -293,9 +405,99 @@ class DatabaseManager:
                 }
         except Exception as e:
             logger.error(f"❌ Stats hatası: {e}")
-            return {}
+            return {"error": str(e)}
+
+    @classmethod
+    async def _get_stats_postgres(cls, company_id, user_id=None) -> dict:
+        if not cls._pool:
+            return {"total_requests": 0, "blocked": 0, "allowed": 0, "avg_latency_ms": 0}
+        try:
+            async with cls._pool.acquire() as conn:
+                conditions = []
+                params = []
+                i = 1
+                if company_id is not None:
+                    conditions.append(f"company_id = ${i}")
+                    params.append(company_id)
+                    i += 1
+                if user_id is not None:
+                    conditions.append(f"user_id = ${i}")
+                    params.append(user_id)
+                    i += 1
+
+                where_clause = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+
+                total = await conn.fetchval(f"SELECT COUNT(*) FROM security_logs{where_clause}", *params)
+                
+                block_conditions = ["action='BLOCK'"] + conditions
+                block_where = " WHERE " + " AND ".join(block_conditions)
+                blocked = await conn.fetchval(f"SELECT COUNT(*) FROM security_logs{block_where}", *params)
+                
+                allow_conditions = ["action='ALLOW'"] + conditions
+                allow_where = " WHERE " + " AND ".join(allow_conditions)
+                allowed = await conn.fetchval(f"SELECT COUNT(*) FROM security_logs{allow_where}", *params)
+                
+                avg_latency = await conn.fetchval(f"SELECT AVG(latency_ms) FROM security_logs{where_clause}", *params) or 0
+                return {
+                    "total_requests": total,
+                    "blocked": blocked,
+                    "allowed": allowed,
+                    "avg_latency_ms": round(float(avg_latency), 1),
+                }
+        except Exception as e:
+            logger.error(f"❌ PostgreSQL stats hatası: {e}")
+            return {"error": str(e)}
 
     # ─── KULLANICI (AUTH) YÖNETİMİ ──────────────────────────────────────────────
+    @classmethod
+    async def create_company(cls, name: str, domain: str = None) -> Optional[int]:
+        """Yeni bir şirket oluşturur ve ID'sini döner."""
+        created_at = datetime.now().isoformat()
+        if USE_SQLITE:
+            try:
+                async with aiosqlite.connect(SQLITE_PATH) as db:
+                    cursor = await db.execute(
+                        "INSERT INTO companies (name, domain, created_at) VALUES (?, ?, ?)",
+                        (name, domain, created_at)
+                    )
+                    await db.commit()
+                    return cursor.lastrowid
+            except Exception as e:
+                logger.error(f"❌ Şirket oluşturma hatası (SQLite): {e}")
+                return None
+        else:
+            if not cls._pool: return None
+            try:
+                async with cls._pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        "INSERT INTO companies (name, domain, created_at) VALUES ($1, $2, $3) RETURNING id",
+                        name, domain, created_at
+                    )
+                    return row["id"]
+            except Exception as e:
+                logger.error(f"❌ Şirket oluşturma hatası (PostgreSQL): {e}")
+                return None
+
+    @classmethod
+    async def get_all_companies(cls) -> list:
+        if USE_SQLITE:
+            try:
+                async with aiosqlite.connect(SQLITE_PATH) as db:
+                    db.row_factory = aiosqlite.Row
+                    async with db.execute("SELECT * FROM companies ORDER BY name") as cursor:
+                        rows = await cursor.fetchall()
+                        return [dict(row) for row in rows]
+            except Exception as e:
+                return []
+        else:
+            if not cls._pool: return []
+            try:
+                async with cls._pool.acquire() as conn:
+                    rows = await conn.fetch("SELECT * FROM companies ORDER BY name")
+                    return [dict(row) for row in rows]
+            except Exception as e:
+                return []
+
     @classmethod
     async def create_user(
         cls, 
@@ -304,7 +506,9 @@ class DatabaseManager:
         email: str = None, 
         phone: str = None, 
         full_name: str = "", 
-        role: str = "user"
+        role: str = "employee",
+        company_id: int = None,
+        department: str = ""
     ) -> bool:
         """Yeni bir kullanıcı oluşturur."""
         created_at = datetime.now().isoformat()
@@ -312,9 +516,9 @@ class DatabaseManager:
             try:
                 async with aiosqlite.connect(SQLITE_PATH) as db:
                     await db.execute(
-                        """INSERT INTO users (username, password_hash, email, phone, full_name, role, created_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                        (username, password_hash, email, phone, full_name, role, created_at)
+                        """INSERT INTO users (username, password_hash, email, phone, full_name, role, company_id, created_at, department)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (username, password_hash, email, phone, full_name, role, company_id, created_at, department)
                     )
                     await db.commit()
                 return True
@@ -326,9 +530,9 @@ class DatabaseManager:
             try:
                 async with cls._pool.acquire() as conn:
                     await conn.execute(
-                        """INSERT INTO users (username, password_hash, email, phone, full_name, role, created_at)
-                           VALUES ($1, $2, $3, $4, $5, $6, $7)""",
-                        username, password_hash, email, phone, full_name, role, created_at
+                        """INSERT INTO users (username, password_hash, email, phone, full_name, role, company_id, created_at, department)
+                           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
+                        username, password_hash, email, phone, full_name, role, company_id, created_at, department
                     )
                 return True
             except Exception as e:
@@ -448,6 +652,29 @@ class DatabaseManager:
             return False
 
     # ─── KAPATMA / CLEANUP ─────────────────────────────────────────────────────
+    @classmethod
+    async def get_users_by_company(cls, company_id: int) -> list:
+        """Belirtilen şirkete ait tüm kullanıcıları getirir."""
+        if USE_SQLITE:
+            try:
+                async with aiosqlite.connect(SQLITE_PATH) as db:
+                    db.row_factory = aiosqlite.Row
+                    async with db.execute("SELECT id, username, email, phone, role, full_name, created_at FROM users WHERE company_id = ? ORDER BY role", (company_id,)) as cursor:
+                        rows = await cursor.fetchall()
+                        return [dict(row) for row in rows]
+            except Exception as e:
+                logger.error(f"❌ Kullanıcı listeleme hatası (SQLite): {e}")
+                return []
+        else:
+            if not cls._pool: return []
+            try:
+                async with cls._pool.acquire() as conn:
+                    rows = await conn.fetch("SELECT id, username, email, phone, role, full_name, created_at FROM users WHERE company_id = $1 ORDER BY role", company_id)
+                    return [dict(row) for row in rows]
+            except Exception as e:
+                logger.error(f"❌ Kullanıcı listeleme hatası (PostgreSQL): {e}")
+                return []
+
     @classmethod
     async def close(cls):
         """Tüm veritabanı bağlantılarını düzgün kapatır (graceful shutdown)."""

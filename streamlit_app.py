@@ -1,8 +1,3 @@
-"""
-GenAI Security Gateway - User Interface
-Streamlit-based web application for prompt submission and security analysis
-"""
-
 import streamlit as st
 import requests
 import json
@@ -18,6 +13,11 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "last_result" not in st.session_state:
+    st.session_state.last_result = None
 
 # ============================================================================
 # STYLING
@@ -60,7 +60,8 @@ st.markdown("""
 # CONFIG
 # ============================================================================
 API_URL = "http://127.0.0.1:8001/api/v1"
-BACKEND_TIMEOUT = 10
+BACKEND_TIMEOUT = 60
+
 
 # ============================================================================
 # SIDEBAR - AYARLAR
@@ -156,9 +157,12 @@ with tab1:
         st.rerun()
     
     # User ID
+    query_params = st.query_params
+    default_user_id = query_params.get("username", f"user_{int(time.time())}")
+    
     user_id = st.text_input(
         "Kullanıcı Kimliği:",
-        value=f"user_{int(time.time())}",
+        value=default_user_id,
         key="user_id"
     )
     
@@ -199,7 +203,8 @@ with tab1:
                         f"http://{backend_host}/api/v1/analyze",
                         json={
                             "text": user_prompt,
-                            "user_id": user_id
+                            "user_id": user_id,
+                            "conversation_history": st.session_state.chat_history
                         },
                         timeout=BACKEND_TIMEOUT
                     )
@@ -208,57 +213,15 @@ with tab1:
                     
                     if response.status_code == 200:
                         result = response.json()
+                        st.session_state.last_result = result
                         
-                        # Sonuç Gösterimi
-                        st.success("✅ Analiz Tamamlandı!")
+                        # Başarılı ve engellenmemişse geçmişe ekle
+                        if result.get("status") == "ALLOW" and result.get("llm_response"):
+                            st.session_state.chat_history.append({"role": "user", "content": user_prompt})
+                            st.session_state.chat_history.append({"role": "model", "content": result.get("llm_response")})
+                        else:
+                            st.session_state.chat_history.append({"role": "user", "content": user_prompt, "blocked": True, "reason": result.get("category")})
                         
-                        # Sonuç Kartları
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            status = "✅ İZİN" if result.get("status") == "ALLOW" else "🚫 ENGEL"
-                            color = "green" if result.get("status") == "ALLOW" else "red"
-                            st.metric("İşlem", status)
-                        
-                        with col2:
-                            category = result.get("category", "Bilinmiyor")
-                            st.metric("Kategori", category)
-                        
-                        with col3:
-                            st.metric("Latency", f"{latency_ms:.0f}ms")
-                        
-                        st.divider()
-                        
-                        # Detaylı Sonuçlar
-                        st.subheader("📊 Analiz Detayları")
-                        
-                        result_cols = st.columns(2)
-                        
-                        with result_cols[0]:
-                            st.write("**Layer 1 (Regex) Sonucu:**")
-                            l1 = result.get("layer1_result", {})
-                            if l1.get("blocked"):
-                                st.error(f"🚫 Engellendi: {l1.get('reason', 'Kural ihlali')}")
-                            else:
-                                st.success("✅ Güvenli")
-                        
-                        with result_cols[1]:
-                            st.write("**Layer 3 (LLM Judge) Sonucu:**")
-                            l3 = result.get("layer3_result", {})
-                            if l3.get("blocked"):
-                                st.error(f"🚫 Engellendi: {l3.get('reason', 'Şüpheli detektlenmiş')}")
-                            else:
-                                st.success("✅ Güvenli")
-                        
-                        st.divider()
-                        
-                        # Raw Response
-                        with st.expander("📄 Detaylı JSON Yanıt"):
-                            st.json(result)
-                        
-                        # Log ID
-                        st.info(f"📌 Log ID: `{result.get('log_id', 'N/A')}`")
-                    
                     else:
                         st.error(f"❌ Backend Hatası: {response.status_code}")
                         st.write(response.text)
@@ -269,8 +232,126 @@ with tab1:
                     st.error(f"❌ Bağlantı Hatası: Backend'e ulaşılamıyor ({backend_host})")
                 except Exception as e:
                     st.error(f"❌ Hata: {str(e)}")
+                    
+    # Render Last Result
+    if st.session_state.last_result:
+        result = st.session_state.last_result
+        latency_ms = result.get('latency_ms', 0)
+        
+        # Sonuç Gösterimi
+        st.success("✅ Analiz Tamamlandı!")
+        
+        # Sonuç Kartları
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            status = "✅ İZİN" if result.get("status") == "ALLOW" else "🚫 ENGEL"
+            color = "green" if result.get("status") == "ALLOW" else "red"
+            st.metric("İşlem", status)
+        
+        with col2:
+            category = result.get("category", "Bilinmiyor")
+            st.metric("Kategori", category)
+        
+        with col3:
+            st.metric("Latency", f"{latency_ms}ms")
+        
+        st.divider()
+        
+        # Detaylı Sonuçlar
+        st.subheader("📊 Analiz Detayları")
+        
+        active_layers = result.get("active_layers", {})
+        result_cols = st.columns(3)
+        
+        with result_cols[0]:
+            st.write("**Layer 1 (Regex):**")
+            if not active_layers.get("layer1", True):
+                st.markdown("⚪ Kapalı")
+            elif result.get("status") == "BLOCK" and result.get("category") == "Blacklist":
+                st.error("🚫 Engellendi (Yasaklı kelime)")
+            else:
+                st.success("✅ Güvenli")
+                
+        with result_cols[1]:
+            st.write("**Layer 2 (DeBERTa):**")
+            if not active_layers.get("layer2", True):
+                st.markdown("⚪ Kapalı")
+            elif result.get("status") == "BLOCK" and result.get("category") == "Injection":
+                st.error("🚫 Engellendi (Saldırı tespiti)")
+            else:
+                st.success("✅ Güvenli")
+        
+        with result_cols[2]:
+            st.write("**Layer 3 (LLM Judge):**")
+            if not active_layers.get("layer3", True):
+                st.markdown("⚪ Kapalı")
+            elif result.get("status") == "BLOCK" and result.get("category") == "Policy Violation":
+                st.error("🚫 Engellendi (Jailbreak)")
+            else:
+                st.success("✅ Güvenli")
+        
+        st.divider()
+        
+        # Sohbet geçmişini çiz (Eskiler silinmesin diye)
+        if st.session_state.chat_history:
+            st.divider()
+            st.markdown("### ✨ 🧠 GenAI Asistanı Sohbeti ✨")
+            for msg in st.session_state.chat_history:
+                if msg["role"] == "user":
+                    with st.chat_message("user"):
+                        st.write(msg["content"])
+                        if msg.get("blocked"):
+                            st.error(f"🚫 Sistem bu isteği engelledi: {msg.get('reason')}")
+                else:
+                    with st.chat_message("assistant"):
+                        st.write(msg["content"])
+            
+            # Devam kutusu (Streamlit'in native chat box'u daha şık)
+            if follow_up_prompt := st.chat_input("Sen ne düşünüyorsun? Sohbete devam et..."):
+                st.session_state.chat_history_pending_prompt = follow_up_prompt
+                st.rerun()
+        
+        # Raw Response
+        with st.expander("📄 Detaylı JSON Yanıt"):
+            st.json(result)
+        
+        # Log ID
+        st.info(f"📌 Log ID: `{result.get('log_id', 'N/A')}`")
+        
+    # Handle pending follow-up outside form
+    if hasattr(st.session_state, 'chat_history_pending_prompt'):
+        pending_text = st.session_state.chat_history_pending_prompt
+        del st.session_state.chat_history_pending_prompt
+        
+        with st.spinner("🔄 Analiz yapılıyor..."):
+            try:
+                response = requests.post(
+                    f"http://{backend_host}/api/v1/analyze",
+                    json={
+                        "text": pending_text,
+                        "user_id": user_id,
+                        "conversation_history": st.session_state.chat_history
+                    },
+                    timeout=BACKEND_TIMEOUT
+                )
+                if response.status_code == 200:
+                    result = response.json()
+                    st.session_state.last_result = result
+                    if result.get("status") == "ALLOW" and result.get("llm_response"):
+                        st.session_state.chat_history.append({"role": "user", "content": pending_text})
+                        st.session_state.chat_history.append({"role": "model", "content": result.get("llm_response")})
+                    else:
+                        st.session_state.chat_history.append({"role": "user", "content": pending_text, "blocked": True, "reason": result.get("category")})
+                else:
+                    st.error(f"❌ Backend Hatası: {response.status_code}")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Hata: {str(e)}")
     
     if clear_button:
+        st.session_state.chat_history = []
+        st.session_state.last_result = None
         st.rerun()
 
 # ============================================================================
