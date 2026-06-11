@@ -1,0 +1,129 @@
+# GenAI Security Gateway — Detaylı İmplementasyon Planı
+
+## Genel Durum: 13 Nisandan Önce
+- **IP1 ✅** Literatür + Gereksinim Analizi — Tamamlandı
+- **IP2 ✅** Sistem Mimarisi + Veritabanı Tasarımı — Tamamlandı
+- **IP3 ⚠️** Backend + DLP — İskelet var, bağlantılar eksik
+- **IP4 ⚠️** AI Modelleri — Kod var, wiring / test yok
+- **IP5 ❌** Dashboard — Hiç başlanmadı
+- **IP6 ❌** Test + Optimizasyon — Hiç başlanmadı
+
+---
+
+13 Nisan 2026------------------------------------------
+## ADIM 1 — Bug Fix & Tam Entegrasyon (Backend Çalışır Hale Getirme)
+**Süre: ~2 saat | Durum: [ ]**
+
+### Yapılacaklar:
+- [ ] `.env` dosyası oluştur (OpenAI API key + DB bilgileri)
+- [ ] `layer1_regex.py` → `scan()` dönüş tipini düzelt (tuple → namedtuple/dataclass)
+- [ ] `security_controller.py` → Layer1 dönüş tipi uyumunu sağla
+- [ ] `security_controller.py` → `log_security_event()` çağrılarını yorum satırından çıkar
+- [ ] `database_manager.py` → `create_table()` metodu ekle (tablo otomatik oluşsun)
+- [ ] `main.py` → startup event'e model preload + DB init ekle
+- [ ] Sistemi `uvicorn` ile ayağa kaldır ve Swagger'dan test et
+
+### Başarı Kriteri:
+`POST /api/v1/analyze` çağrısı hatasız dönsün, log DB'ye yazılsın.
+
+---
+
+## ADIM 2 — Veritabanı Kurulumu (PostgreSQL veya SQLite)
+**Süre: ~1 saat | Durum: [ ]**
+
+### Yapılacaklar:
+- [ ] PostgreSQL kurulumu veya SQLite fallback kararı ver
+- [ ] `security_logs` tablosu oluşturma SQL scripti yaz (`db_setup.sql`)
+- [ ] `database_manager.py` → bağlantı havuzu (connection pool) ekle
+- [ ] DB bağlantısını test et
+
+### Başarı Kriteri:
+Her `/analyze` isteği `security_logs` tablosuna kayıt atsın.
+
+---
+
+## ADIM 3 — Eksik API Endpoint'leri
+**Süre: ~1 saat | Durum: [ ]**
+
+### Yapılacaklar:
+- [ ] `GET /api/v1/logs` — log kayıtlarını listele (filtreli + sayfalı)
+- [ ] `POST /api/v1/feedback` — false positive bildirme
+- [ ] Her ikisini Swagger'dan test et
+
+### Başarı Kriteri:
+Tezde belirtilen 4 endpoint'in tamamı çalışır durumda olsun.
+
+---
+
+## ADIM 4 — Test & Performans Ölçümü
+**Süre: ~2 saat | Durum: [ ]**
+
+### Yapılacaklar:
+- [ ] `tests/test_pipeline.py` — otomatik test scripti yaz
+- [ ] JailbreakBench CSV'den saldırı testleri çalıştır
+- [ ] Alpaca veri setinden benign (masum) testler çalıştır
+- [ ] TPR, FPR, ortalama Latency hesapla
+- [ ] Sonuçları `tests/results.json` olarak kaydet
+- [ ] Model cold-start sorununu çöz (startup'ta DeBERTa ön yükleme)
+
+### Başarı Kriteri:
+- TPR > %95, FPR < %2, Latency < 200ms
+
+---
+
+## ADIM 5 — SOC Dashboard (React + Vite)
+**Süre: ~3 gün | Durum: [ ]**
+
+### 3 Ekran (Tezden):
+#### 5.1 Ana Panel (SOC Dashboard)
+- [ ] KPI kartları: Toplam İstek, Engellenen Saldırı, İzin Verilen, Ortalama Latency
+- [ ] Saldırı türü pasta grafiği (Blacklist / Injection / PII / Safe)
+- [ ] Zaman bazlı çizgi grafiği (son 24 saat trafik)
+- [ ] Real-time güncelleme (polling veya WebSocket)
+
+#### 5.2 Log Analiz & Detay Sayfası
+- [ ] Filtrelenebilir log tablosu (tür, tarih, kullanıcı)
+- [ ] Satıra tıklayınca detay modal: maskelenmiş prompt, AI skoru, hangi katmanda durdu
+- [ ] False Positive buton (feedback endpoint'e bağlı)
+
+#### 5.3 Güvenlik Kuralları & Ayarlar
+- [ ] Blacklist kelime yönetimi (ekle/sil)
+- [ ] Threshold slider (Layer 2 eşik değeri: 0.50 - 0.90)
+- [ ] Değişiklikler canlı API'ye kaydedilsin
+
+### Teknoloji:
+- React + Vite
+- Recharts (grafikler)
+- Backend API'ye bağlı (`/api/v1/logs`, `/api/v1/analyze`)
+
+### Başarı Kriteri:
+Tezdeki Şekil 7, 8, 9'daki tasarımlara benzer çalışan web arayüzü.
+
+---
+
+## ADIM 6 — Optimizasyon & Demo Hazırlama
+**Süre: ~1 gün | Durum: [ ]**
+
+### Yapılacaklar:
+- [ ] Uçtan uca test senaryoları (Senaryo A: DLP, Senaryo B: Jailbreak)
+- [ ] Latency optimizasyonu (DeBERTa cache, async DB yazma)
+- [ ] `README.md` — kurulum ve kullanım kılavuzu
+- [ ] Sunum demo'su hazırlama
+- [ ] Docker Compose (opsiyonel — tek komutla tüm sistem ayağa kalksın)
+
+### Başarı Kriteri:
+Sistem uçtan uca hatasız çalışıyor, demo hazır.
+
+---
+
+## Zaman Çizelgesi
+
+| Adım | İş | Süre |
+|------|-----|------|
+| ADIM 1 | Bug Fix & Entegrasyon | ~2 saat |
+| ADIM 2 | Veritabanı | ~1 saat |
+| ADIM 3 | Eksik Endpoint'ler | ~1 saat |
+| ADIM 4 | Test & Ölçüm | ~2 saat |
+| ADIM 5 | SOC Dashboard | ~2-3 gün |
+| ADIM 6 | Optimizasyon & Demo | ~1 gün |
+| **TOPLAM** | | **~1 hafta** |

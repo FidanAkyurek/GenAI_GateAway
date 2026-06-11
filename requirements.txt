@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+python-dotenv
+aiofiles
+asyncpg
+aiosqlite
+openai
+pydantic
+passlib[bcrypt]
+pyjwt
+requests
+
+google-generativeai==0.6.0
