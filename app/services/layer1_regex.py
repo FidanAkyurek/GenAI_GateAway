@@ -11,6 +11,7 @@ class Layer1Result:
     is_blocked: bool
     has_pii: bool
     processed_text: str
+    detected_entities: list[str] = None
 
 
 class Layer1Regex:
@@ -21,24 +22,9 @@ class Layer1Regex:
     """
 
     # Yasaklı kelimeler (Blacklist) - Dashboard'dan dinamik olarak yönetilebilir
-    BLACKLIST = [
-        # Türkçe
-        "bomba", "intihar", "sql_injection", "bypass",
-        "patlayıcı", "uyuşturucu", "silah yapımı", "zehir",
-        # İngilizce — Saldırı
-        "malware", "keylogger", "ransomware", "phishing",
-        "jailbreak", "dan mode", "do anything now",
-        "ignore previous instructions", "ignore all instructions",
-        "pretend you are", "act as if", "you are now",
-        "disregard your", "forget your instructions",
-        # İngilizce — Tehlikeli içerik
-        "make a bomb", "build a bomb", "how to make explosives",
-        "synthesize drugs", "create a virus", "write malware",
-        "hack into", "hacking into", "unauthorized access",
-        "child pornography", "child sexual", "csam",
-        "torture", "genocide", "ethnic cleansing",
-        "shoot up", "mass shooting", "school shooting",
-    ]
+    from app.services.core_blacklist import CORE_BLACKLIST
+    # Yasaklı kelimeler (Blacklist) - 1300+ kelimelik dışarıdan yüklenen çekirdek liste
+    BLACKLIST = CORE_BLACKLIST
 
     # PII (Hassas Veri) Regex Desenleri
     # T.C. Kimlik No: 11 haneli, 0 ile başlamaz
@@ -56,20 +42,23 @@ class Layer1Regex:
     def scan(cls, text: str, dynamic_blacklist: list = None) -> Layer1Result:
         """
         Metni yasaklı kelimeler ve PII açısından tarar.
-        Dönüş: Layer1Result(is_blocked, has_pii, processed_text)
+        Dönüş: Layer1Result(is_blocked, has_pii, processed_text, detected_entities)
         """
         is_blocked = False
         has_pii = False
         processed_text = text
+        detected_entities = []
 
         # 1. Blacklist (Yasaklı Kelime) Kontrolü
         text_lower = text.lower()
-        words_to_check = dynamic_blacklist if dynamic_blacklist is not None else cls.BLACKLIST
+        # Kritik Güvenlik Yaması: Çekirdek liste ile Dashboard'dan gelen dinamik listeyi birleştir
+        words_to_check = cls.BLACKLIST + (dynamic_blacklist if dynamic_blacklist is not None else [])
+        
         for word in words_to_check:
             if word.lower() in text_lower:
                 is_blocked = True
                 # Fail-Fast: Yasaklı kelime → hemen engelle, maskelemeye gerek yok
-                return Layer1Result(is_blocked=True, has_pii=False, processed_text=text)
+                return Layer1Result(is_blocked=True, has_pii=False, processed_text=text, detected_entities=[f"Kara Liste: {word}"])
 
         # 2. PII Kontrolü ve Maskeleme (DLP - Data Loss Prevention)
         def mask_tc(match):
@@ -99,21 +88,26 @@ class Layer1Regex:
         if cls.TC_PATTERN.search(processed_text):
             has_pii = True
             processed_text = cls.TC_PATTERN.sub(mask_tc, processed_text)
+            detected_entities.append("T.C. Kimlik No")
 
         if cls.CC_PATTERN.search(processed_text):
             has_pii = True
             processed_text = cls.CC_PATTERN.sub(mask_cc, processed_text)
+            detected_entities.append("Kredi Kartı")
 
         if cls.EMAIL_PATTERN.search(processed_text):
             has_pii = True
             processed_text = cls.EMAIL_PATTERN.sub(mask_email, processed_text)
+            detected_entities.append("E-posta Adresi")
 
         if cls.PHONE_PATTERN.search(processed_text):
             has_pii = True
             processed_text = cls.PHONE_PATTERN.sub(mask_phone, processed_text)
+            detected_entities.append("Telefon Numarası")
 
         if cls.IBAN_PATTERN.search(processed_text):
             has_pii = True
             processed_text = cls.IBAN_PATTERN.sub(mask_iban, processed_text)
+            detected_entities.append("IBAN")
 
-        return Layer1Result(is_blocked=False, has_pii=has_pii, processed_text=processed_text)
+        return Layer1Result(is_blocked=False, has_pii=has_pii, processed_text=processed_text, detected_entities=detected_entities)

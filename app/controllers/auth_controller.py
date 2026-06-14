@@ -124,7 +124,8 @@ async def login(user: UserLogin):
     if not db_user:
         raise HTTPException(status_code=401, detail="Invalid username or password")
         
-    if not verify_password(user.password, db_user["password_hash"]):
+    match = verify_password(user.password, db_user["password_hash"])
+    if not match:
         raise HTTPException(status_code=401, detail="Invalid username or password")
         
     access_token = create_access_token(

@@ -1,5 +1,47 @@
 const API_BASE = '/api/v1';
 
+const notifiedLogs = new Set();
+
+function showToast(title, message, logData) {
+  const container = document.getElementById('toastContainer');
+  if (!container) return;
+
+  const toast = document.createElement('div');
+  toast.className = 'toast-notification';
+  toast.innerHTML = `
+    <div class="toast-icon">
+      <i data-lucide="bell-ring" style="width:20px;height:20px;"></i>
+    </div>
+    <div class="toast-content">
+      <div class="toast-title">${title}</div>
+      <div class="toast-body">${message}</div>
+    </div>
+  `;
+
+  toast.onclick = () => {
+    openLogModal(logData);
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  };
+
+  container.appendChild(toast);
+  
+  if (window.lucide) {
+    lucide.createIcons();
+  }
+
+  setTimeout(() => {
+    toast.classList.add('show');
+  }, 50);
+
+  setTimeout(() => {
+    if (toast.parentNode) {
+      toast.classList.remove('show');
+      setTimeout(() => toast.remove(), 300);
+    }
+  }, 6000);
+}
+
 async function apiFetch(path, opts = {}) {
   const token = localStorage.getItem('token');
   if (!opts.headers) opts.headers = {};
@@ -50,6 +92,8 @@ const refs = {
   mdlTime: document.getElementById('mdlTime'),
   mdlUser: document.getElementById('mdlUser'),
   mdlStatus: document.getElementById('mdlStatus'),
+  mdlBypassStatus: document.getElementById('mdlBypassStatus'),
+  mdlJustification: document.getElementById('mdlJustification'),
   mdlPrompt: document.getElementById('mdlPrompt'),
   mdlWarning: document.getElementById('mdlWarning'),
   mdlLayer: document.getElementById('mdlLayer'),
@@ -58,6 +102,10 @@ const refs = {
   mdlCategory: document.getElementById('mdlCategory'),
   btnValidate: document.getElementById('btnValidate'),
   btnFalsePositive: document.getElementById('btnFalsePositive'),
+  modalStandardFooter: document.getElementById('modalStandardFooter'),
+  modalApprovalFooter: document.getElementById('modalApprovalFooter'),
+  btnApproveRequest: document.getElementById('btnApproveRequest'),
+  btnRejectRequest: document.getElementById('btnRejectRequest'),
   t1: document.getElementById('tglLayer1'),
   t2: document.getElementById('tglLayer2'),
   t3: document.getElementById('tglLayer3'),
@@ -106,12 +154,54 @@ async function openLogModal(data) {
   refs.mdlPrompt.innerText = log.masked_prompt || '-';
   refs.mdlLayer.innerText = log.stopped_at_layer || '-';
   refs.mdlCategory.innerText = log.category || '-';
+  
+  if (refs.mdlBypassStatus) refs.mdlBypassStatus.innerText = log.bypass_status || 'Yok';
+  if (refs.mdlJustification) refs.mdlJustification.innerText = log.justification || 'Gerekçe belirtilmedi';
+  
   const pct = Math.round((log.ai_confidence_score || 0) * 100);
   refs.mdlScoreText.innerText = pct;
   refs.mdlScoreBar.style.width = pct + '%';
-  refs.mdlStatus.innerText = log.action === 'BLOCK' ? 'BLOKLANDI' : 'İZİN VERİLDİ';
-  refs.mdlStatus.className = `badge badge-lg ${log.action === 'BLOCK' ? 'badge-block' : 'badge-allow'}`;
-  refs.mdlWarning.style.display = log.action === 'BLOCK' ? 'flex' : 'none';
+  
+  // Reset custom styles if any
+  refs.mdlStatus.style.background = '';
+  refs.mdlStatus.style.color = '';
+  
+  if (log.action === 'BLOCK') {
+    refs.mdlStatus.innerText = 'BLOKLANDI';
+    refs.mdlStatus.className = 'badge badge-lg badge-block';
+    refs.mdlWarning.style.display = 'flex';
+  } else if (log.action === 'PENDING') {
+    refs.mdlStatus.innerText = 'ONAY BEKLİYOR';
+    refs.mdlStatus.className = 'badge badge-lg';
+    refs.mdlStatus.style.background = '#f59e0b';
+    refs.mdlStatus.style.color = 'white';
+    refs.mdlWarning.style.display = 'flex';
+  } else {
+    refs.mdlStatus.innerText = 'İZİN VERİLDİ';
+    refs.mdlStatus.className = 'badge badge-lg badge-allow';
+    refs.mdlWarning.style.display = 'none';
+  }
+
+  // Handle footer visibility for approvals
+  if (log.action === 'PENDING') {
+    if (refs.modalStandardFooter) refs.modalStandardFooter.style.display = 'none';
+    if (refs.modalApprovalFooter) refs.modalApprovalFooter.style.display = 'flex';
+    
+    if (refs.btnApproveRequest) {
+      refs.btnApproveRequest.disabled = false;
+      refs.btnApproveRequest.innerHTML = 'Talebi Onayla (ALLOW) <i data-lucide="check" style="width:18px;"></i>';
+      refs.btnApproveRequest.onclick = () => handleManagerDecision(log.log_id, 'approve', refs.btnApproveRequest);
+    }
+    if (refs.btnRejectRequest) {
+      refs.btnRejectRequest.disabled = false;
+      refs.btnRejectRequest.innerHTML = 'Talebi Reddet (BLOCK) <i data-lucide="x" style="width:18px;"></i>';
+      refs.btnRejectRequest.onclick = () => handleManagerDecision(log.log_id, 'reject', refs.btnRejectRequest);
+    }
+  } else {
+    if (refs.modalStandardFooter) refs.modalStandardFooter.style.display = 'flex';
+    if (refs.modalApprovalFooter) refs.modalApprovalFooter.style.display = 'none';
+  }
+  
   refs.btnValidate.onclick = () => submitFeedback(log.log_id, 'safe', refs.btnValidate);
   refs.btnFalsePositive.onclick = () => submitFeedback(log.log_id, 'false_positive', refs.btnFalsePositive);
   refs.logDetailModal.style.display = 'flex';
@@ -120,6 +210,33 @@ async function openLogModal(data) {
 
 function closeLogModal() {
   refs.logDetailModal.style.display = 'none';
+}
+
+async function handleManagerDecision(logId, decision, btn) {
+  const original = btn.innerHTML;
+  btn.innerHTML = decision === 'approve' ? 'Onaylanıyor...' : 'Reddediliyor...';
+  btn.disabled = true;
+  try {
+    const res = await apiFetch(`${API_BASE}/admin/company/logs/${encodeURIComponent(logId)}/${decision}`, { 
+      method: 'POST' 
+    });
+    if (!res || !res.ok) throw new Error('Action failed');
+    btn.innerHTML = decision === 'approve' ? 'Onaylandı' : 'Reddedildi';
+    setTimeout(() => {
+      closeLogModal();
+      refreshDashboard();
+      if (window.location.hash === '#nav-logs' || refs.viewLogs.classList.contains('active')) {
+        fetchDetailedLogs();
+      }
+    }, 1200);
+  } catch (error) {
+    console.error(error);
+    btn.innerHTML = 'Hata';
+    setTimeout(() => { 
+      btn.innerHTML = original; 
+      btn.disabled = false;
+    }, 1500);
+  }
 }
 
 async function submitFeedback(logId, type, btn) {
@@ -205,6 +322,20 @@ async function refreshDashboard() {
     charts.category.data.labels = Object.keys(counts);
     charts.category.data.datasets[0].data = Object.values(counts);
     charts.category.update();
+  }
+
+  // Yöneticiler için onay bekleyen yeni taleplerin bildirimini göster
+  if (role === 'company_admin' || role === 'super_admin') {
+    (logs.logs || []).forEach(log => {
+      if (log.action === 'PENDING' && !notifiedLogs.has(log.log_id)) {
+        notifiedLogs.add(log.log_id);
+        showToast(
+          "Yeni Onay Talebi 📨",
+          `<b>${log.user_id}</b> kullanıcısı onay bekleyen bir işlem gerçekleştirdi.<br>Gerekçe: <i>${log.justification || 'Girilmedi'}</i>`,
+          log
+        );
+      }
+    });
   }
 }
 

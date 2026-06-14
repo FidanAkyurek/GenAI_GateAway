@@ -16,6 +16,9 @@
 </head>
 
 <body>
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="notification-area"></div>
+
     <div class="dashboard-wrapper">
 
 
@@ -391,6 +394,8 @@
                                 <p><strong>Kullanıcı:</strong> <span id="mdlUser">-</span></p>
                                 <p class="status-row mt-1"><strong>Durum:</strong>&nbsp; <span id="mdlStatus"
                                         class="badge badge-lg">-</span></p>
+                                <p class="mt-1" style="margin-top: 10px;"><strong>Bypass Durumu:</strong> <span id="mdlBypassStatus">-</span></p>
+                                <p class="mt-1" style="margin-top: 10px; word-break: break-all;"><strong>Bypass Gerekçesi:</strong> <span id="mdlJustification">-</span></p>
                             </div>
                         </div>
 
@@ -426,12 +431,20 @@
                         </div>
                     </div>
 
-                    <div class="modal-footer">
+                    <div class="modal-footer" id="modalStandardFooter" style="display: flex;">
                         <button class="btn success-action" id="btnValidate">
                             [ DOĞRU KARAR (Onayla) <i data-lucide="check-square" style="width:18px;"></i> ]
                         </button>
                         <button class="btn danger-action" id="btnFalsePositive">
                             [ YANLIŞ POZİTİF (Raporla) <i data-lucide="x-square" style="width:18px;"></i> ]
+                        </button>
+                    </div>
+                    <div class="modal-footer" id="modalApprovalFooter" style="display: none; justify-content: flex-end; gap: 1rem;">
+                        <button class="btn success-action" id="btnApproveRequest" style="background: #10b981; color: white;">
+                            Talebi Onayla (ALLOW) <i data-lucide="check" style="width:18px;"></i>
+                        </button>
+                        <button class="btn danger-action" id="btnRejectRequest" style="background: #ef4444; color: white;">
+                            Talebi Reddet (BLOCK) <i data-lucide="x" style="width:18px;"></i>
                         </button>
                     </div>
                 </div>

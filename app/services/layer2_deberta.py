@@ -1,4 +1,4 @@
-from transformers import pipeline
+from transformers import pipeline  # type: ignore
 import logging
 
 # Loglama ayarları (Uygulamanın durumunu konsoldan takip etmek için)
@@ -19,12 +19,20 @@ class Layer2DeBERTa:
     def load_model(cls):
         """
         Modeli hafızaya yükler. API ayağa kalktığında bir kere çalıştırılması performansı artırır.
-        WINDOWS MKL CRASH FIX: DeBERTa disable edildi - Layer 1 ve Layer 3'e güvenilir
+        WINDOWS MKL CRASH FIX: KMP_DUPLICATE_LIB_OK=TRUE eklendi.
         """
         if cls._classifier is None:
-            logger.warning("⚠️ Katman 2 (DeBERTa) Windows MKL uyumluluğu nedeniyle devre dışı bırakıldı.")
-            logger.warning("Layer 1 (Regex) ve Layer 3 (LLM) aktif ve yeterlidir.")
-            cls._classifier = None  # Fail-open mode
+            import os
+            # Windows NumPy/MKL crash workaround
+            os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+            
+            try:
+                logger.info(f"⏳ Katman 2 (DeBERTa) yükleniyor: {cls._model_name}")
+                cls._classifier = pipeline("text-classification", model=cls._model_name)
+                logger.info("✅ Katman 2 (DeBERTa) başarıyla yüklendi!")
+            except Exception as e:
+                logger.error(f"❌ Katman 2 yüklenirken hata oluştu: {e}")
+                cls._classifier = None  # Fail-open mode
 
     _cache = {}
 

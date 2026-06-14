@@ -1,6 +1,8 @@
 import os
 import logging
+# pyrefly: ignore [missing-import]
 import asyncpg
+# pyrefly: ignore [missing-import]
 import aiosqlite
 from datetime import datetime
 from typing import Optional
@@ -44,6 +46,8 @@ class DatabaseManager:
             ai_confidence_score REAL DEFAULT 0.0,
             latency_ms          INTEGER DEFAULT 0,
             created_at          TEXT NOT NULL,
+            justification       TEXT,
+            bypass_status       TEXT,
             FOREIGN KEY (company_id) REFERENCES companies(id)
         )
     """
@@ -112,10 +116,21 @@ class DatabaseManager:
                         ai_confidence_score REAL DEFAULT 0.0,
                         latency_ms          INTEGER DEFAULT 0,
                         created_at          TEXT NOT NULL,
+                        justification       TEXT,
+                        bypass_status       TEXT,
                         FOREIGN KEY (company_id) REFERENCES companies(id)
                     )
                 """
                 await conn.execute(pg_create_logs)
+                # Alter postgres table if columns do not exist
+                try:
+                    await conn.execute("ALTER TABLE security_logs ADD COLUMN IF NOT EXISTS justification TEXT")
+                except Exception:
+                    pass
+                try:
+                    await conn.execute("ALTER TABLE security_logs ADD COLUMN IF NOT EXISTS bypass_status TEXT")
+                except Exception:
+                    pass
                 
                 # Note: AUTOINCREMENT is sqlite specific, PostgreSQL uses SERIAL
                 pg_create_users = """
@@ -168,6 +183,15 @@ class DatabaseManager:
                     await db.execute('ALTER TABLE users ADD COLUMN department TEXT DEFAULT ""')
                 except Exception:
                     pass
+                # Yeni sütunları ekle (hata almamak için try-except)
+                try:
+                    await db.execute('ALTER TABLE security_logs ADD COLUMN justification TEXT')
+                except Exception:
+                    pass
+                try:
+                    await db.execute('ALTER TABLE security_logs ADD COLUMN bypass_status TEXT')
+                except Exception:
+                    pass
                 await db.execute(cls.CREATE_FEEDBACK_TABLE_SQL)
                 await db.commit()
             cls._sqlite_initialized = True
@@ -196,8 +220,8 @@ class DatabaseManager:
                 # ancak DB katmanında hash yapmamak daha iyi, o yüzden varsayılan olarak basir bir bcrypt stringi
                 # koyacağız veya doğrudan auth controller üzerinden bu seed fonksiyonunu çağırabiliriz.
                 # Daha temiz olması için varsayılan şifre "superadmin123" olacak. 
-                # (bcrypt hash'i $2b$12$R.S.s3Kxk4162G8q.9m/yOg5mQZlU4/GfF6xT7N5eCxg6K.Hq2Btm -> 'superadmin123')
-                default_hash = "$2b$12$R.S.s3Kxk4162G8q.9m/yOg5mQZlU4/GfF6xT7N5eCxg6K.Hq2Btm"
+                # (bcrypt hash'i $2b$12$aKcyv8Dz6YPlBbVQY2fnxul23gm95AzMeTm/3NzrRKf3F3WrdMFxi -> 'superadmin123')
+                default_hash = "$2b$12$aKcyv8Dz6YPlBbVQY2fnxul23gm95AzMeTm/3NzrRKf3F3WrdMFxi"
                 await cls.create_user(
                     username="superadmin",
                     password_hash=default_hash,
@@ -220,7 +244,9 @@ class DatabaseManager:
         stopped_at_layer: str,
         ai_score: float,
         latency_ms: int,
-        company_id: Optional[int] = None
+        company_id: Optional[int] = None,
+        justification: Optional[str] = None,
+        bypass_status: Optional[str] = None
     ):
         """Güvenlik olayını asenkron olarak veritabanına yazar."""
         created_at = datetime.now().isoformat()
@@ -228,26 +254,31 @@ class DatabaseManager:
         if USE_SQLITE:
             await cls._log_sqlite(
                 log_id, user_id, company_id, masked_prompt, action,
-                category, stopped_at_layer, ai_score, latency_ms, created_at
+                category, stopped_at_layer, ai_score, latency_ms, created_at,
+                justification, bypass_status
             )
         else:
             await cls._log_postgres(
                 log_id, user_id, company_id, masked_prompt, action,
-                category, stopped_at_layer, ai_score, latency_ms, created_at
+                category, stopped_at_layer, ai_score, latency_ms, created_at,
+                justification, bypass_status
             )
 
     @classmethod
     async def _log_sqlite(cls, log_id, user_id, company_id, masked_prompt, action,
-                          category, stopped_at_layer, ai_score, latency_ms, created_at):
+                          category, stopped_at_layer, ai_score, latency_ms, created_at,
+                          justification=None, bypass_status=None):
         try:
             async with aiosqlite.connect(SQLITE_PATH) as db:
                 await db.execute(
                     """INSERT INTO security_logs
                        (log_id, user_id, company_id, masked_prompt, action, category,
-                        stopped_at_layer, ai_confidence_score, latency_ms, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        stopped_at_layer, ai_confidence_score, latency_ms, created_at,
+                        justification, bypass_status)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (log_id, user_id, company_id, masked_prompt, action, category,
-                     stopped_at_layer, ai_score, latency_ms, created_at)
+                     stopped_at_layer, ai_score, latency_ms, created_at,
+                     justification, bypass_status)
                 )
                 await db.commit()
                 logger.info(f"📝 Log kaydedildi → {log_id} | {action} ({category})")
@@ -256,7 +287,8 @@ class DatabaseManager:
 
     @classmethod
     async def _log_postgres(cls, log_id, user_id, company_id, masked_prompt, action,
-                             category, stopped_at_layer, ai_score, latency_ms, created_at):
+                             category, stopped_at_layer, ai_score, latency_ms, created_at,
+                             justification=None, bypass_status=None):
         if not cls._pool:
             logger.warning("⚠️ PostgreSQL bağlantısı yok, log atlanıyor.")
             return
@@ -265,14 +297,34 @@ class DatabaseManager:
                 await conn.execute(
                     """INSERT INTO security_logs
                        (log_id, user_id, company_id, masked_prompt, action, category,
-                        stopped_at_layer, ai_confidence_score, latency_ms, created_at)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)""",
+                        stopped_at_layer, ai_confidence_score, latency_ms, created_at,
+                        justification, bypass_status)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)""",
                     log_id, user_id, company_id, masked_prompt, action, category,
-                    stopped_at_layer, ai_score, latency_ms, created_at
+                    stopped_at_layer, ai_score, latency_ms, created_at,
+                    justification, bypass_status
                 )
                 logger.info(f"📝 Log kaydedildi → {log_id} | {action} ({category})")
         except Exception as e:
             logger.error(f"❌ PostgreSQL log hatası: {e}")
+
+    @classmethod
+    async def update_log_status(cls, log_id: str, action: str, bypass_status: str) -> bool:
+        """Logun karar (action) ve bypass durumunu günceller."""
+        query = "UPDATE security_logs SET action = ?, bypass_status = ? WHERE log_id = ?" if USE_SQLITE else "UPDATE security_logs SET action = $1, bypass_status = $2 WHERE log_id = $3"
+        try:
+            if USE_SQLITE:
+                async with aiosqlite.connect(SQLITE_PATH) as db:
+                    await db.execute(query, (action, bypass_status, log_id))
+                    await db.commit()
+            else:
+                async with cls._pool.acquire() as conn:
+                    await conn.execute(query, action, bypass_status, log_id)
+            logger.info(f"🔄 Log durumu güncellendi: {log_id} → {action} ({bypass_status})")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Log durumu güncelleme hatası: {e}")
+            return False
 
     # ─── LOG LİSTELEME ────────────────────────────────────────────────────────
     @classmethod

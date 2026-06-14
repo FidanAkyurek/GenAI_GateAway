@@ -1,7 +1,7 @@
 import os
 import logging
-from google import genai
-from google.genai import types
+from google import genai  # type: ignore
+from google.genai import types  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +24,8 @@ class Layer3LLMJudge:
             cls._client = genai.Client(api_key=api_key)
         return cls._client
 
-    # Gemini'nin en yeni modeli
-    _model_name = "gemini-flash-latest"
+    # Gemini'nin stabil modeli
+    _model_name = "gemini-2.5-flash-lite"
 
     # LLM'i bir güvenlik uzmanı gibi davranmaya zorlayan sistem komutu
     _system_instruction = """

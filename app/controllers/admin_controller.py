@@ -137,6 +137,22 @@ async def get_company_logs(limit: int = 50, payload: dict = Depends(verify_compa
     logs = await DatabaseManager.get_logs(limit=limit, company_id=company_id)
     return {"count": len(logs), "logs": logs}
 
+@router.post("/company/logs/{log_id}/approve", tags=["Company Admin"])
+async def approve_pending_log(log_id: str, payload: dict = Depends(verify_company_admin)):
+    """Şirket yöneticisi bekleyen bir hassas veri gönderim talebini onaylar (ALLOW)."""
+    success = await DatabaseManager.update_log_status(log_id, action="ALLOW", bypass_status="Approved")
+    if not success:
+        raise HTTPException(status_code=500, detail="Talep onaylanamadı.")
+    return {"success": True, "message": "Talep başarıyla onaylandı."}
+
+@router.post("/company/logs/{log_id}/reject", tags=["Company Admin"])
+async def reject_pending_log(log_id: str, payload: dict = Depends(verify_company_admin)):
+    """Şirket yöneticisi bekleyen bir hassas veri gönderim talebini reddeder (BLOCK)."""
+    success = await DatabaseManager.update_log_status(log_id, action="BLOCK", bypass_status="Rejected")
+    if not success:
+        raise HTTPException(status_code=500, detail="Talep reddedilemedi.")
+    return {"success": True, "message": "Talep başarıyla reddedildi."}
+
 @router.get("/company/employees", tags=["Company Admin"])
 async def get_company_employees(payload: dict = Depends(verify_company_admin)):
     """Şirket yöneticisi kendi şirketinin çalışanlarını listeler."""

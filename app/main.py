@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Query, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 import time
 import logging
-import signal
 import os
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -15,7 +15,7 @@ load_dotenv()
 from app.controllers import security_controller, auth_controller, admin_controller
 from app.services.database_manager import DatabaseManager
 from app.config_manager import ConfigManager, RulesConfig
-# from app.services.layer2_deberta import Layer2DeBERTa  # Disable DeBERTa to avoid MKL crash
+from app.services.layer2_deberta import Layer2DeBERTa
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,6 +25,32 @@ logger = logging.getLogger(__name__)
 
 # Graceful shutdown flag
 _shutdown_event = False
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _shutdown_event
+    _shutdown_event = False
+    logger.info("🚀 GenAI Security Gateway başlatılıyor...")
+    try:
+        Layer2DeBERTa.load_model()
+        await DatabaseManager.initialize()
+        logger.info("✅ Sistem hazır!")
+    except Exception as e:
+        logger.error(f"❌ Başlatma hatası: {e}", exc_info=True)
+        raise
+
+    yield
+
+    _shutdown_event = True
+    logger.info("🛑 GenAI Security Gateway kapatılıyor...")
+    try:
+        # Database bağlantılarını düzgün kapat
+        await DatabaseManager.close()
+        logger.info("✅ Veritabanı bağlantıları kapatıldı")
+    except Exception as e:
+        logger.error(f"❌ Kapatılırken hata: {e}", exc_info=True)
+    logger.info("✅ Sistem tamamen kapatıldı")
 
 
 # ── FastAPI Uygulaması ─────────────────────────────────────────────────────────
@@ -42,10 +68,9 @@ Kullanıcılar ile yapay zeka modelleri arasında konumlanan, 3 katmanlı güven
 
 ### Geliştirici: Funda Bozburun & Fidan Akyürek | İstanbul Topkapı Üniversitesi
     """,
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
-
-from starlette.middleware.sessions import SessionMiddleware
 
 # ── CORS (Dashboard ve harici istemciler için) ─────────────────────────────────
 app.add_middleware(
@@ -59,31 +84,6 @@ app.add_middleware(
 # ── Session Middleware (OAuth için zorunlu) ────────────────────────────────────
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("JWT_SECRET", "super-secret-oauth-session-key"))
 
-# ── Startup Event ──────────────────────────────────────────────────────────
-@app.on_event("startup")
-async def startup():
-    global _shutdown_event
-    _shutdown_event = False
-    logger.info("🚀 GenAI Security Gateway başlatılıyor...")
-    try:
-        await DatabaseManager.initialize()
-        logger.info("✅ Sistem hazır!")
-    except Exception as e:
-        logger.error(f"❌ Başlatma hatası: {e}", exc_info=True)
-        raise
-
-@app.on_event("shutdown")
-async def shutdown():
-    global _shutdown_event
-    _shutdown_event = True
-    logger.info("🛑 GenAI Security Gateway kapatılıyor...")
-    try:
-        # Database bağlantılarını düzgün kapat
-        await DatabaseManager.close()
-        logger.info("✅ Veritabanı bağlantıları kapatıldı")
-    except Exception as e:
-        logger.error(f"❌ Kapatılırken hata: {e}", exc_info=True)
-    logger.info("✅ Sistem tamamen kapatıldı")
 
 # ── Router'ı dahil et ──────────────────────────────────────────────────────────
 app.include_router(security_controller.router, prefix="/api/v1")

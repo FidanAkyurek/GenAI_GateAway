@@ -2,22 +2,21 @@ import time
 import uuid
 import logging
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from app.models.schemas import PromptRequest, PromptResponse
-from app.services.layer1_regex import Layer1Regex
-# from app.services.layer2_deberta import Layer2DeBERTa  # Disable DeBERTa to avoid MKL crash
+from app.services.layer1_regex import Layer1Regex, Layer1Result
+from app.services.layer2_deberta import Layer2DeBERTa
 from app.services.layer3_llm_judge import Layer3LLMJudge
 from app.services.database_manager import DatabaseManager
 from app.services.llm_proxy import LLMProxy
 from app.config_manager import ConfigManager
-from app.controllers.auth_controller import verify_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 @router.post("/analyze", response_model=PromptResponse, tags=["Security Analysis"])
-async def analyze_prompt(request: PromptRequest):
+async def analyze_prompt(request: PromptRequest, http_req: Request = None):
     """
     Kullanıcıdan gelen prompt'u 3 katmanlı güvenlik analizinden (Fail-Fast) geçirir.
 
@@ -36,6 +35,99 @@ async def analyze_prompt(request: PromptRequest):
     # Config ayarlarını çek
     config = ConfigManager.load_config()
 
+    # JWT token varsa company_id ve user_id JWT'den al (güvenilirlik için)
+    if http_req:
+        auth_header = http_req.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            try:
+                import jwt as pyjwt
+                from app.controllers.auth_controller import SECRET_KEY, ALGORITHM
+                token_str = auth_header.split(" ", 1)[1]
+                jwt_payload = pyjwt.decode(token_str, SECRET_KEY, algorithms=[ALGORITHM])
+                # JWT'den gelen company_id request'teki değeri override eder
+                if jwt_payload.get("company_id"):
+                    request.company_id = jwt_payload["company_id"]
+                # JWT'den gelen username (sub) request user_id'yi override eder
+                if jwt_payload.get("sub"):
+                    request.user_id = jwt_payload["sub"]
+            except Exception as jwt_err:
+                logger.debug(f"JWT okuma atlandı: {jwt_err}")
+
+    # JWT yoksa veya company_id set edilmemişse veritabanından kullanıcı adına göre şirketi bul
+    if not request.company_id and request.user_id:
+        user_info = await DatabaseManager.get_user_by_username(request.user_id)
+        if user_info and user_info.get("company_id"):
+            request.company_id = user_info["company_id"]
+
+    # ══════════════════════════════════════════════════════════
+    # BYPASS VEYA ONAY TALEBİ KONTROLÜ
+    # ══════════════════════════════════════════════════════════
+    if request.bypass_action == "bypass":
+        if not request.bypass_justification:
+            raise HTTPException(status_code=400, detail="Bypass için gerekçe belirtilmelidir.")
+        
+        # DLP sonucunu maskelemek için regex çalıştır (loglarda maskeli saklamak için)
+        temp_result = Layer1Regex.scan(processed_text, config.blacklist)
+        masked_prompt = temp_result.processed_text
+        
+        latency = int((time.time() - start_time) * 1000)
+        await DatabaseManager.log_security_event(
+            log_id=log_id, user_id=request.user_id,
+            masked_prompt=masked_prompt, action="ALLOW",
+            category="PII_BYPASS", stopped_at_layer="None",
+            ai_score=0.0, latency_ms=latency,
+            company_id=request.company_id,
+            justification=request.bypass_justification,
+            bypass_status="Bypassed (Red Flag)"
+        )
+        
+        logger.warning(f"🔴 RED FLAG BYPASS [PII_BYPASS] user={request.user_id} | Gerekçe={request.bypass_justification} | {latency}ms")
+        
+        if request.is_test:
+            llm_response_text = "TEST_MODE_ACTIVE: API limiti korunması için yapay zeka cevabı atlandı."
+        else:
+            llm_response_text = await LLMProxy.generate_response(request.text, request.conversation_history)
+            
+        return PromptResponse(
+            log_id=log_id, status="ALLOW", category="PII_BYPASS",
+            processed_text=request.text,  # Bypass edildiği için orijinal metin
+            llm_response=llm_response_text,
+            active_layers={"layer1": config.layer_regex, "layer2": config.layer_deberta, "layer3": config.layer_llm},
+            latency_ms=latency,
+            justification=request.bypass_justification,
+            bypass_status="Bypassed (Red Flag)"
+        )
+
+    elif request.bypass_action == "request_approval":
+        if not request.bypass_justification:
+            raise HTTPException(status_code=400, detail="Onay talebi için gerekçe belirtilmelidir.")
+        
+        temp_result = Layer1Regex.scan(processed_text, config.blacklist)
+        masked_prompt = temp_result.processed_text
+        
+        latency = int((time.time() - start_time) * 1000)
+        await DatabaseManager.log_security_event(
+            log_id=log_id, user_id=request.user_id,
+            masked_prompt=masked_prompt, action="PENDING",
+            category="PII_PENDING", stopped_at_layer="None",
+            ai_score=0.0, latency_ms=latency,
+            company_id=request.company_id,
+            justification=request.bypass_justification,
+            bypass_status="Pending Approval"
+        )
+        
+        logger.info(f"📨 ONAY BEKLİYOR [PII_PENDING] user={request.user_id} | Gerekçe={request.bypass_justification}")
+        
+        return PromptResponse(
+            log_id=log_id, status="PENDING", category="PII_PENDING",
+            processed_text=masked_prompt,
+            llm_response="İsteğiniz yönetici onayına gönderildi. Onaylandıktan sonra işlenecektir.",
+            active_layers={"layer1": config.layer_regex, "layer2": config.layer_deberta, "layer3": config.layer_llm},
+            latency_ms=latency,
+            justification=request.bypass_justification,
+            bypass_status="Pending Approval"
+        )
+
     # ══════════════════════════════════════════════════════════
     # KATMAN 1: REFLEKS (Regex & DLP - PII Maskeleme)
     # ══════════════════════════════════════════════════════════
@@ -49,81 +141,149 @@ async def analyze_prompt(request: PromptRequest):
                 log_id=log_id, user_id=request.user_id,
                 masked_prompt=processed_text, action="BLOCK",
                 category="Blacklist", stopped_at_layer=stopped_at_layer,
-                ai_score=0.0, latency_ms=latency
+                ai_score=0.0, latency_ms=latency,
+                company_id=request.company_id
             )
             logger.warning(f"🚫 BLOCK [Layer1/Blacklist] user={request.user_id} | {latency}ms")
+            
+            block_explanation = None
+            if not request.is_test:
+                block_explanation = await LLMProxy.generate_block_explanation(
+                    prompt=request.text,
+                    category="Blacklist",
+                    reason="Yasaklı kelime tespit edildi."
+                )
+            
             return PromptResponse(
                 log_id=log_id, status="BLOCK", category="Blacklist",
                 reason="Yasaklı kelime tespit edildi.",
+                llm_response=block_explanation,
                 active_layers={"layer1": config.layer_regex, "layer2": config.layer_deberta, "layer3": config.layer_llm},
                 latency_ms=latency
             )
 
-        # PII varsa maskele, güvenli metin ile devam et
+        # PII varsa maskele, durdur ve DLP_ALERT döner
         if regex_result.has_pii:
-            processed_text = regex_result.processed_text
-            logger.info(f"🔒 PII maskelendi, işlem devam ediyor | user={request.user_id}")
+            stopped_at_layer = "Layer1"
+            latency = int((time.time() - start_time) * 1000)
+            await DatabaseManager.log_security_event(
+                log_id=log_id, user_id=request.user_id,
+                masked_prompt=regex_result.processed_text, action="BLOCK",
+                category="PII", stopped_at_layer=stopped_at_layer,
+                ai_score=0.0, latency_ms=latency,
+                company_id=request.company_id,
+                bypass_status="Blocked (DLP Alert)"
+            )
+            logger.warning(f"🔒 DLP ALERT [Layer1/PII] user={request.user_id} | {latency}ms")
+            
+            return PromptResponse(
+                log_id=log_id, status="DLP_ALERT", category="PII",
+                reason="KVKK veya kurum politikalarına aykırı hassas veri tespit edildi.",
+                processed_text=regex_result.processed_text,
+                active_layers={"layer1": config.layer_regex, "layer2": config.layer_deberta, "layer3": config.layer_llm},
+                latency_ms=latency,
+                detected_entities=regex_result.detected_entities,
+                bypass_status="Blocked (DLP Alert)"
+            )
     else:
         # Regex motoru kapalı ise, sadece dummy result oluştur (Loglama için Pii=False varsayarız)
-        from app.services.layer1_regex import Layer1Result
         regex_result = Layer1Result(is_blocked=False, has_pii=False, processed_text=processed_text)
 
     # ══════════════════════════════════════════════════════════
     # KATMAN 2: ZEKA (DeBERTa AI Modeli)
     # ══════════════════════════════════════════════════════════
-    # Optimize edilmiş eşik değerleri (Dashboard'dan gelir)
     THRESHOLD_HIGH = config.ai_threshold
-    THRESHOLD_LOW  = 0.35   # Bu skoru aşan → LLM Judge'a gönder
+    THRESHOLD_LOW  = 0.35   # Bu skoru aşan → LLM Judge'a gönder (veya şüpheli)
 
+    deberta_blocked = False
     if config.layer_deberta:
-        # DeBERTa model disabled due to MKL crash on Windows
-        ai_score = 0.0  # Placeholder - Layer2DeBERTa.predict_score(processed_text)
-        logger.info(f"🤖 DeBERTa skoru (disabled): {ai_score} | user={request.user_id}")
+        ai_score = Layer2DeBERTa.predict_score(processed_text)
+        logger.info(f"🤖 DeBERTa skoru: {ai_score} | user={request.user_id}")
 
         if ai_score > THRESHOLD_HIGH:
-            stopped_at_layer = "Layer2"
-            latency = int((time.time() - start_time) * 1000)
-            await DatabaseManager.log_security_event(
-                log_id=log_id, user_id=request.user_id,
-                masked_prompt=processed_text, action="BLOCK",
-                category="Injection", stopped_at_layer=stopped_at_layer,
-                ai_score=ai_score, latency_ms=latency
-            )
-            logger.warning(f"🚫 BLOCK [Layer2/Injection] score={ai_score} | {latency}ms")
-            return PromptResponse(
-                log_id=log_id, status="BLOCK", category="Injection",
-                reason=f"Saldırı girişimi tespit edildi. (AI Skoru: {ai_score:.2f})",
-                active_layers={"layer1": config.layer_regex, "layer2": config.layer_deberta, "layer3": config.layer_llm},
-                latency_ms=latency
-            )
+            deberta_blocked = True
     else:
         ai_score = 0.0
 
     # ══════════════════════════════════════════════════════════
     # KATMAN 3: BİLGELİK (LLM Yargıç)
-    # DeBERTa disabled olduğu için, tüm mesajlara Layer 3 uygulanır
-    # Fail-Fast: Layer 1 geçtiyse Layer 3 kontrol eder
+    # Hibrit doğrulama: Eğer DeBERTa engelleme kararı verdiyse veya skor gri bölgedeyse
+    # ve LLM Judge aktifse, Gemini Yargı ile teyit et.
     # ══════════════════════════════════════════════════════════
-    if config.layer_llm:
+    
+    # LLM Judge ne zaman çalışacak?
+    # 1. LLM Judge aktif ve test modunda değilsek
+    # VE EĞER:
+    #   a) DeBERTa engelleme kararı verdiyse (deberta_blocked == True) -> Teyit için
+    #   b) VEYA DeBERTa skoru gri bölgedeyse (ai_score >= THRESHOLD_LOW) -> İnceleme için
+    #   c) VEYA DeBERTa katmanı kapalıysa -> Tüm mesajları incelemesi için (fail-secure)
+    need_llm_judge = config.layer_llm and not request.is_test and (
+        deberta_blocked or 
+        (config.layer_deberta and ai_score >= THRESHOLD_LOW) or 
+        not config.layer_deberta
+    )
+
+    if need_llm_judge:
         llm_verdict = await Layer3LLMJudge.evaluate(processed_text, request.conversation_history)
-        logger.info(f"⚖️ LLM Yargıç kararı: {llm_verdict} | user={request.user_id}")
+        logger.info(f"⚖️ LLM Yargıç kararı: {llm_verdict} (DeBERTa Skoru: {ai_score:.2f}, Blok Kararı: {deberta_blocked}) | user={request.user_id}")
 
         if llm_verdict == "UNSAFE":
-            stopped_at_layer = "Layer3"
+            stopped_at_layer = "Layer3" if not deberta_blocked else "Layer2+Layer3"
+            category = "Injection" if deberta_blocked else "Policy Violation"
+            reason = "Yapay Zeka Yargıç anlamsal bir saldırı veya manipülasyon tespit etti."
+            
             latency = int((time.time() - start_time) * 1000)
             await DatabaseManager.log_security_event(
                 log_id=log_id, user_id=request.user_id,
                 masked_prompt=processed_text, action="BLOCK",
-                category="Policy Violation", stopped_at_layer=stopped_at_layer,
-                ai_score=ai_score, latency_ms=latency
+                category=category, stopped_at_layer=stopped_at_layer,
+                ai_score=ai_score, latency_ms=latency,
+                company_id=request.company_id
             )
-            logger.warning(f"🚫 BLOCK [Layer3/PolicyViolation] | {latency}ms")
+            logger.warning(f"🚫 BLOCK [{stopped_at_layer}/{category}] | {latency}ms")
+            
+            block_explanation = await LLMProxy.generate_block_explanation(
+                prompt=request.text,
+                category=category,
+                reason=reason
+            )
+            
             return PromptResponse(
-                log_id=log_id, status="BLOCK", category="Policy Violation",
-                reason="LLM Yargıç karmaşık bir manipülasyon (Jailbreak) tespit etti.",
+                log_id=log_id, status="BLOCK", category=category,
+                reason=reason,
+                llm_response=block_explanation,
                 active_layers={"layer1": config.layer_regex, "layer2": config.layer_deberta, "layer3": config.layer_llm},
                 latency_ms=latency
             )
+        else:
+            if deberta_blocked:
+                logger.info(f"🛡️ False Positive Tespiti Önleme: DeBERTa engelleme istedi ({ai_score:.2f}) fakat LLM Yargıç SAFE dedi. İzin veriliyor.")
+    
+    elif deberta_blocked:
+        stopped_at_layer = "Layer2"
+        latency = int((time.time() - start_time) * 1000)
+        await DatabaseManager.log_security_event(
+            log_id=log_id, user_id=request.user_id,
+            masked_prompt=processed_text, action="BLOCK",
+            category="Injection", stopped_at_layer=stopped_at_layer,
+            ai_score=ai_score, latency_ms=latency,
+            company_id=request.company_id
+        )
+        logger.warning(f"🚫 BLOCK [Layer2/Injection] score={ai_score} | {latency}ms")
+        
+        block_explanation = await LLMProxy.generate_block_explanation(
+            prompt=request.text,
+            category="Injection",
+            reason=f"Saldırı girişimi tespit edildi. (AI Skoru: {ai_score:.2f})"
+        )
+        
+        return PromptResponse(
+            log_id=log_id, status="BLOCK", category="Injection",
+            reason=f"Saldırı girişimi tespit edildi. (AI Skoru: {ai_score:.2f})",
+            llm_response=block_explanation,
+            active_layers={"layer1": config.layer_regex, "layer2": config.layer_deberta, "layer3": config.layer_llm},
+            latency_ms=latency
+        )
 
     # ══════════════════════════════════════════════════════════
     # GÜVENLİ İSTEK — Tüm katmanlardan geçti
@@ -136,12 +296,16 @@ async def analyze_prompt(request: PromptRequest):
         log_id=log_id, user_id=request.user_id,
         masked_prompt=processed_text, action="ALLOW",
         category=category, stopped_at_layer=stopped_at_layer,
-        ai_score=ai_score, latency_ms=latency
+        ai_score=ai_score, latency_ms=latency,
+        company_id=request.company_id
     )
     logger.info(f"✅ ALLOW [{category}] | Security Latency: {latency}ms")
 
     # Yapay zeka'dan cevabı al (sohbet geçmişiyle birlikte)
-    llm_response_text = await LLMProxy.generate_response(processed_text, request.conversation_history)
+    if request.is_test:
+        llm_response_text = "TEST_MODE_ACTIVE: API limiti korunması için yapay zeka cevabı atlandı."
+    else:
+        llm_response_text = await LLMProxy.generate_response(processed_text, request.conversation_history)
 
     return PromptResponse(
         log_id=log_id, status="ALLOW", category=category,
@@ -440,8 +604,8 @@ async def health_check():
     - db_connected: Veritabanı bağlı mı?
     """
     try:
-        # DeBERTa modeli disabled - return false
-        model_ready = False  # Layer2DeBERTa._model is not None
+        # DeBERTa modeli yüklü mü
+        model_ready = Layer2DeBERTa._classifier is not None
         
         # DB kontrol et
         db_ok = await DatabaseManager.get_stats() is not None
