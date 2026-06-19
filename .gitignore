@@ -1,2 +1,23 @@
+# ── Ortam ve Gizli Dosyalar ──
 .env
 .venv/
+
+# ── Python Önbellek ──
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ── Veritabanı ──
+*.db
+
+# ── IDE / Editör ──
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── İşletim Sistemi ──
+Thumbs.db
+Desktop.ini
+.DS_Store
