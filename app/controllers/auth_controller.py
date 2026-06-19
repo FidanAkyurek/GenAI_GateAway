@@ -1,3 +1,13 @@
+"""
+GenAI Security Gateway - Kimlik Doğrulama Kontrolcüsü (Auth Controller)
+
+Sisteme giriş yapan kullanıcıların kimlik doğrulamasını (Authentication) ve 
+yetkilendirmesini (Authorization) sağlar. 
+Kullanıcı giriş yaptığında bir JWT (JSON Web Token) üretilir ve bu token 
+diğer tüm korumalı uç noktalarda (endpoints) güvenliği sağlamak için kullanılır.
+Ayrıca profil güncelleme ve şifre değiştirme işlemleri de bu dosyada bulunur.
+"""
+
 from fastapi import APIRouter, HTTPException, Security, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr

@@ -1,3 +1,16 @@
+/*
+ * GenAI Security Gateway - Frontend Uygulaması (app.js)
+ *
+ * Bu JavaScript dosyası, kullanıcıların sisteme giriş yaptığı, prompt gönderdiği
+ * ve güvenlik analiz sonuçlarını gördüğü web arayüzünün mantığını (logic) yönetir.
+ * 
+ * Ana İşlevler:
+ * 1. Sunucu ile haberleşme (Fetch API ile REST çağrıları)
+ * 2. JWT (JSON Web Token) yönetimi ve LocalStorage'da saklanması
+ * 3. Arayüz etkileşimleri (Buton tıklamaları, modal açılıp kapanması)
+ * 4. Animasyonlar ve bildirim (toast) mesajları
+ */
+
 const API_BASE = '/api/v1';
 
 const notifiedLogs = new Set();
@@ -256,19 +269,119 @@ async function submitFeedback(logId, type, btn) {
 
 async function initCharts() {
   if (!refs.ratioChart || !refs.categoryChart) return;
-  Chart.defaults.color = '#94a3b8';
-  charts.ratio = new Chart(refs.ratioChart.getContext('2d'), {
+
+  Chart.defaults.font.family = "'Outfit', sans-serif";
+  Chart.defaults.color = '#7C7A88';
+
+  // ── Doughnut: Karar Dağılımı ──
+  const dCtx = refs.ratioChart.getContext('2d');
+  charts.ratio = new Chart(dCtx, {
     type: 'doughnut',
     data: {
       labels: ['Engellenen', 'İzin Verilen'],
-      datasets: [{ data: [0, 0], backgroundColor: ['#ef4444', '#10b981'], borderWidth: 0 }]
+      datasets: [{
+        data: [0, 0],
+        backgroundColor: ['#EF4444', '#10B981'],
+        hoverBackgroundColor: ['#F87171', '#34D399'],
+        borderWidth: 0,
+        hoverOffset: 10,
+        spacing: 2
+      }]
     },
-    options: { cutout: '70%', responsive: true, maintainAspectRatio: false }
+    options: {
+      cutout: '72%',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            padding: 20,
+            font: { family: "'Outfit', sans-serif", size: 12, weight: '600' },
+            usePointStyle: true,
+            pointStyleWidth: 10
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(19,17,28,0.95)',
+          borderColor: 'rgba(157,110,248,0.25)',
+          borderWidth: 1,
+          padding: 12,
+          titleFont: { family: "'Outfit'", size: 13, weight: '700' },
+          bodyFont:  { family: "'Outfit'", size: 12 },
+          callbacks: {
+            label: ctx => ` ${ctx.label}: ${ctx.raw} istek`
+          }
+        }
+      },
+      animation: { animateRotate: true, duration: 900, easing: 'easeInOutQuart' }
+    }
   });
-  charts.category = new Chart(refs.categoryChart.getContext('2d'), {
+
+  // ── Bar: Güvenlik Olayları Kategorileri ──
+  const bCtx = refs.categoryChart.getContext('2d');
+
+  // Gradient fill for bars
+  const gradBar = bCtx.createLinearGradient(0, 0, 0, 260);
+  gradBar.addColorStop(0,   'rgba(157,110,248,0.95)');
+  gradBar.addColorStop(1,   'rgba(99,102,241,0.35)');
+
+  charts.category = new Chart(bCtx, {
     type: 'bar',
-    data: { labels: [], datasets: [{ label: 'Olay Sayısı', data: [], backgroundColor: '#6366f1' }] },
-    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+    data: {
+      labels: [],
+      datasets: [{
+        label: 'Olay Sayısı',
+        data: [],
+        backgroundColor: gradBar,
+        borderColor: 'rgba(157,110,248,0.6)',
+        borderWidth: 1,
+        borderRadius: 8,
+        borderSkipped: false,
+        hoverBackgroundColor: 'rgba(196,181,253,0.85)'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          labels: {
+            font: { family: "'Outfit'", size: 12, weight: '600' },
+            usePointStyle: true,
+            pointStyleWidth: 8
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(19,17,28,0.95)',
+          borderColor: 'rgba(157,110,248,0.25)',
+          borderWidth: 1,
+          padding: 12,
+          titleFont: { family: "'Outfit'", size: 13, weight: '700' },
+          bodyFont:  { family: "'Outfit'", size: 12 },
+          callbacks: {
+            label: ctx => ` ${ctx.raw} olay`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          border: { display: false },
+          ticks: { font: { family: "'Outfit'", size: 11, weight: '600' } }
+        },
+        y: {
+          beginAtZero: true,
+          grid: {
+            color: 'rgba(255,255,255,0.05)',
+            drawBorder: false
+          },
+          border: { display: false, dash: [4,4] },
+          ticks: { font: { family: "'Outfit'", size: 11 }, precision: 0 }
+        }
+      },
+      animation: { duration: 900, easing: 'easeInOutQuart' }
+    }
   });
 }
 
@@ -499,9 +612,16 @@ window.addEventListener('DOMContentLoaded', async () => {
       if (refs.navSettings) refs.navSettings.style.display = 'flex'; // company_admin görebilir
       const h1 = document.querySelector('.header-titles h1');
       if (h1) h1.innerText = 'Yönetici Paneli';
+      const sub = document.querySelector('.header-titles .subtitle');
+      if (sub) sub.innerText = 'Gerçek zamanlı tehdit ve sızıntı tespit analizi';
   } else {
       // employee veya diğer roller - Güvenlik Kuralları gizli
       if (refs.navSettings) refs.navSettings.style.display = 'none';
+      // Çalışan başlığı
+      const h1 = document.querySelector('.header-titles h1');
+      if (h1) h1.innerText = 'Çalışan Paneli';
+      const sub = document.querySelector('.header-titles .subtitle');
+      if (sub) sub.innerText = 'Güvenli yapay zeka erişimi ve geçmiş kayıtlarınız';
   }
 
   function switchTab(navEl, viewEl, callback) {
@@ -522,6 +642,10 @@ window.addEventListener('DOMContentLoaded', async () => {
     const mainContent = document.querySelector('.main-content');
     if (mainContent) mainContent.scrollTo(0, 0); // Sayfanın en üstüne kaydır
     if (callback) callback();
+    // Yarı-Canlı Mod aktifse sekme değişimini bildir
+    if (typeof window._onTabSwitch === 'function') {
+      setTimeout(window._onTabSwitch, 50); // view class'ı eklendikten sonra çalıştır
+    }
   }
 
   refs.navDashboard.addEventListener('click', e => { e.preventDefault(); switchTab(refs.navDashboard, refs.viewDashboard, refreshDashboard); });
@@ -542,9 +666,128 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (refs.t2) refs.t2.addEventListener('change', () => { updateLayerStatus(); toggleLayer(2); });
   if (refs.t3) refs.t3.addEventListener('change', () => { updateLayerStatus(); toggleLayer(3); });
   if (refs.aiRange) refs.aiRange.addEventListener('input', () => { if (refs.aiVal) refs.aiVal.innerText = refs.aiRange.value; });
+  // ══════════════════════════════════════════════════════
+  //  YARI-CANLI MOD — Tam işlevli otomatik yenileme sistemi
+  // ══════════════════════════════════════════════════════
+  const LIVE_INTERVAL_MS = 10000; // 10 saniye
+  let _liveCountdown   = LIVE_INTERVAL_MS / 1000;
+  let _liveTimer       = null; // setInterval ID (ana yenileme)
+  let _liveCountTick   = null; // setInterval ID (geri sayım)
+  let _lastRefreshTime = null;
+
+  // Şu an aktif olan sekmeyi döndürür
+  function getActiveView() {
+    if (refs.viewLogs     && refs.viewLogs.classList.contains('active'))     return 'logs';
+    if (refs.viewUsers    && refs.viewUsers.classList.contains('active'))    return 'users';
+    if (refs.viewProfiles && refs.viewProfiles.classList.contains('active')) return 'profiles';
+    if (refs.viewSettings && refs.viewSettings.classList.contains('active')) return 'settings';
+    return 'dashboard'; // varsayılan
+  }
+
+  // Aktif sekmeye göre uygun yenileme fonksiyonunu çağırır
+  async function liveRefreshActiveView() {
+    const view = getActiveView();
+    switch(view) {
+      case 'dashboard': await refreshDashboard(); break;
+      case 'logs':      await fetchDetailedLogs(); break;
+      // Diğer sekmeler için dashboard istatistiklerini arka planda güncelle
+      case 'users':
+      case 'profiles':
+      case 'settings':  await refreshDashboard(); break;
+    }
+    _lastRefreshTime = new Date();
+    updateLiveStatus();
+  }
+
+  // Buton metnini ve geri sayım göstergesini günceller
+  function updateLiveStatus() {
+    if (!refs.refreshBtn) return;
+    const isActive = !!_liveTimer;
+    if (isActive) {
+      const secText = _liveCountdown <= 0 ? '⟳' : `${_liveCountdown}s`;
+      refs.refreshBtn.querySelector('span').innerText = `Canlı: ${secText}`;
+    } else {
+      refs.refreshBtn.querySelector('span').innerText = 'Yarı-Canlı Mod';
+    }
+  }
+
+  // Yarı-Canlı Modu BAŞLAT
+  function startLiveMode() {
+    refs.refreshBtn.classList.add('active-refresh');
+    _liveCountdown = LIVE_INTERVAL_MS / 1000;
+
+    // Hemen bir kez yenile
+    liveRefreshActiveView();
+
+    // Geri sayım tick (her saniye)
+    _liveCountTick = setInterval(() => {
+      _liveCountdown--;
+      if (_liveCountdown < 0) _liveCountdown = LIVE_INTERVAL_MS / 1000;
+      updateLiveStatus();
+    }, 1000);
+
+    // Ana yenileme timer
+    _liveTimer = setInterval(() => {
+      _liveCountdown = LIVE_INTERVAL_MS / 1000;
+      liveRefreshActiveView();
+    }, LIVE_INTERVAL_MS);
+
+    // Başlangıç durumu göster
+    updateLiveStatus();
+
+    // Sidebar'daki status indicator'ı da güncelle
+    const statusEl = document.querySelector('.status-indicator');
+    if (statusEl) {
+      statusEl.innerHTML = `<span class="pulse pulse-live"></span> Canlı İzleme Aktif`;
+    }
+  }
+
+  // Yarı-Canlı Modu DURDUR
+  function stopLiveMode() {
+    clearInterval(_liveTimer);
+    clearInterval(_liveCountTick);
+    _liveTimer = null;
+    _liveCountTick = null;
+    _liveCountdown = LIVE_INTERVAL_MS / 1000;
+    refs.refreshBtn.classList.remove('active-refresh');
+    updateLiveStatus();
+
+    // Sidebar'ı eski haline döndür
+    const statusEl = document.querySelector('.status-indicator');
+    if (statusEl) {
+      statusEl.innerHTML = `<span class="pulse"></span> Sistem Aktif`;
+    }
+  }
+
+  // Sekme değiştiğinde aktif moda göre doğru veriyi çek
+  // (switchTab fonksiyonunun ardından çağrılacak)
+  window._onTabSwitch = function() {
+    if (_liveTimer) {
+      // Sekme değişti, hemen yeni sekmenin verisini çek
+      _liveCountdown = LIVE_INTERVAL_MS / 1000;
+      clearInterval(_liveTimer);
+      clearInterval(_liveCountTick);
+
+      liveRefreshActiveView();
+
+      _liveCountTick = setInterval(() => {
+        _liveCountdown--;
+        if (_liveCountdown < 0) _liveCountdown = LIVE_INTERVAL_MS / 1000;
+        updateLiveStatus();
+      }, 1000);
+      _liveTimer = setInterval(() => {
+        _liveCountdown = LIVE_INTERVAL_MS / 1000;
+        liveRefreshActiveView();
+      }, LIVE_INTERVAL_MS);
+    }
+  };
+
   refs.refreshBtn.addEventListener('click', () => {
-    if (window._autoRefresh) { clearInterval(window._autoRefresh); window._autoRefresh = null; refs.refreshBtn.classList.remove('active-refresh'); }
-    else { refs.refreshBtn.classList.add('active-refresh'); window._autoRefresh = setInterval(refreshDashboard, 5000); }
+    if (_liveTimer) {
+      stopLiveMode();
+    } else {
+      startLiveMode();
+    }
   });
   
   if (logoutBtn) {
@@ -613,42 +856,13 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   const startFrontendBtn = document.getElementById('startFrontendBtn');
   if (startFrontendBtn) {
-    startFrontendBtn.addEventListener('click', async () => {
-      // Çift tıklamayı önle
-      if (startFrontendBtn._opening) return;
-      startFrontendBtn._opening = true;
-      startFrontendBtn.disabled = true;
-
-      const originalHtml = startFrontendBtn.innerHTML;
-      startFrontendBtn.innerHTML = '<i data-lucide="loader"></i> <span>Başlatılıyor...</span>';
-      if (window.lucide) lucide.createIcons();
-
-      const resetBtn = () => {
-        startFrontendBtn.innerHTML = originalHtml;
-        startFrontendBtn.disabled = false;
-        startFrontendBtn._opening = false;
-        if (window.lucide) lucide.createIcons();
-      };
-      
-      try {
-        const res = await apiFetch(`${API_BASE}/start-frontend`, { method: 'POST' });
-        if (res && res.ok) {
-          const data = await res.json();
-          if (data.url) {
-             const username = localStorage.getItem('username') || '';
-             const targetUrl = username ? `${data.url}?username=${encodeURIComponent(username)}` : data.url;
-             setTimeout(() => {
-                 window.open(targetUrl, '_blank');
-                 resetBtn();
-             }, 1000);
-          } else { resetBtn(); }
-        } else {
-           alert('Frontend başlatılamadı!');
-           resetBtn();
-        }
-      } catch(err) {
-        resetBtn();
-      }
+    startFrontendBtn.addEventListener('click', () => {
+      // Yeni Zyricon chat arayüzünü aç
+      const username = localStorage.getItem('username') || '';
+      const chatUrl = username
+        ? `/chat.html?username=${encodeURIComponent(username)}`
+        : '/chat.html';
+      window.open(chatUrl, '_blank');
     });
   }
 

@@ -1,5 +1,8 @@
-from transformers import pipeline  # type: ignore
 import logging
+try:
+    from transformers import pipeline  # type: ignore
+except ImportError:
+    pipeline = None
 
 # Loglama ayarları (Uygulamanın durumunu konsoldan takip etmek için)
 logging.basicConfig(level=logging.INFO)
@@ -27,6 +30,8 @@ class Layer2DeBERTa:
             os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
             
             try:
+                if pipeline is None:
+                    raise ImportError("transformers kütüphanesi kurulu değil")
                 logger.info(f"⏳ Katman 2 (DeBERTa) yükleniyor: {cls._model_name}")
                 cls._classifier = pipeline("text-classification", model=cls._model_name)
                 logger.info("✅ Katman 2 (DeBERTa) başarıyla yüklendi!")
@@ -53,8 +58,13 @@ class Layer2DeBERTa:
             logger.warning("Katman 2 atlanıyor: Model aktif değil!")
             return 0.0
 
+        # Performans: Çok uzun metinleri (örn: PDF) DeBERTa'ya göndermeden önce kırp (İlk 1000 ve Son 1000 karakter)
+        process_text = text
+        if len(process_text) > 2000:
+            process_text = process_text[:1000] + " ... [TRUNCATED] ... " + process_text[-1000:]
+
         # Modeli çalıştır ve sonucu al
-        result = cls._classifier(text)
+        result = cls._classifier(process_text)
         
         # Sonuç genellikle [{'label': 'INJECTION', 'score': 0.99}] formatındadır
         score = 0.0

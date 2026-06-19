@@ -1,3 +1,13 @@
+"""
+GenAI Security Gateway - Admin Kontrolcüsü (Admin Controller)
+
+Bu dosya, yönetici (admin) paneli üzerinden yapılan güvenlik konfigürasyonu değişikliklerini,
+kullanıcı yönetimini ve kural güncellemelerini işler.
+Güvenlik katmanlarını (Layer 1, 2, 3) anlık olarak açıp kapatma veya yapay zeka
+hassasiyet eşiğini (threshold) değiştirme işlemleri buradan yönetilir.
+Ayrıca sisteme yeni departmanlar ve şirketler ekleme yetkilerine de sahiptir.
+"""
+
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional, List
 from pydantic import BaseModel

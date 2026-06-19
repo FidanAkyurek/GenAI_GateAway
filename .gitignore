@@ -1,4 +1,5 @@
 # ── Ortam ve Gizli Dosyalar ──
+# .env dosyası API anahtarları ve şifreleri içerir, özelden paylaşılmalı
 .env
 .venv/
 
@@ -7,15 +8,6 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-
-# ── Veritabanı ──
-*.db
-
-# ── IDE / Editör ──
-.vscode/
-.idea/
-*.swp
-*.swo
 
 # ── İşletim Sistemi ──
 Thumbs.db

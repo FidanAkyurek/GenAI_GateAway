@@ -9,43 +9,54 @@ from typing import Optional
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
-# .env dosyasını yükle (projenin kök dizininde olmalı)
+# .env dosyasını yükle (API anahtarları ve veritabanı ayarlarını bellek içine alır)
 load_dotenv()
 
-from app.controllers import security_controller, auth_controller, admin_controller
+# Proje içi denetleyici (controller) ve servislerin sisteme dahil edilmesi
+from app.controllers import security_controller, auth_controller, admin_controller, file_controller
 from app.services.database_manager import DatabaseManager
 from app.config_manager import ConfigManager, RulesConfig
 from app.services.layer2_deberta import Layer2DeBERTa
 
+# Loglama ayarları yapılandırılıyor (Tarih, Hata Seviyesi, Dosya Adı ve Mesaj formatında)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-# Graceful shutdown flag
+# Sunucunun kontrollü (graceful) kapatılıp kapatılmadığını takip eden bayrak
 _shutdown_event = False
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """
+    Uygulamanın yaşam döngüsü (lifespan) yöneticisi.
+    Sistem ayağa kalkarken modelleri ve veritabanını başlatır, 
+    kapanırken bağlantıları güvenli şekilde sonlandırır.
+    """
     global _shutdown_event
     _shutdown_event = False
     logger.info("🚀 GenAI Security Gateway başlatılıyor...")
     try:
+        # Layer 2 (DeBERTa) modelini belleğe yükle (İlk sorguda gecikme yaşanmaması için)
         Layer2DeBERTa.load_model()
+        # Veritabanı bağlantı havuzunu (connection pool) oluştur
         await DatabaseManager.initialize()
         logger.info("✅ Sistem hazır!")
     except Exception as e:
         logger.error(f"❌ Başlatma hatası: {e}", exc_info=True)
         raise
 
+    # Uygulama çalıştığı sürece burada bekler (yield)
     yield
 
+    # Sunucu kapanma sinyali aldığında burası çalışır
     _shutdown_event = True
     logger.info("🛑 GenAI Security Gateway kapatılıyor...")
     try:
-        # Database bağlantılarını düzgün kapat
+        # Askıda kalan veritabanı işlemlerini güvenlice tamamla ve bağlantıyı kopart
         await DatabaseManager.close()
         logger.info("✅ Veritabanı bağlantıları kapatıldı")
     except Exception as e:
@@ -53,7 +64,7 @@ async def lifespan(app: FastAPI):
     logger.info("✅ Sistem tamamen kapatıldı")
 
 
-# ── FastAPI Uygulaması ─────────────────────────────────────────────────────────
+# ── FastAPI Uygulaması (Ana Omurga) ────────────────────────────────────────────
 app = FastAPI(
     title="GenAI Security Gateway",
     description="""
@@ -69,44 +80,52 @@ Kullanıcılar ile yapay zeka modelleri arasında konumlanan, 3 katmanlı güven
 ### Geliştirici: Funda Bozburun & Fidan Akyürek | İstanbul Topkapı Üniversitesi
     """,
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan  # Yaşam döngüsü fonksiyonunu FastAPI'ye bağla
 )
 
-# ── CORS (Dashboard ve harici istemciler için) ─────────────────────────────────
+# ── CORS Ayarları (Önyüzün Arka Yüze Sorunsuz Erişimi İçin) ────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Geliştirme ortamı için tüm kaynaklara izin veriliyor (Prod'da kısıtlanmalı)
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # GET, POST, PUT vb. tüm HTTP metotlarına izin ver
+    allow_headers=["*"],  # İstemciden gelen tüm başlıklara izin ver
 )
 
-# ── Session Middleware (OAuth için zorunlu) ────────────────────────────────────
+# ── Oturum (Session) Yönetimi ──────────────────────────────────────────────────
+# OAuth veya durum bazlı işlemler için gerekli gizli anahtar
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("JWT_SECRET", "super-secret-oauth-session-key"))
 
 
-# ── Router'ı dahil et ──────────────────────────────────────────────────────────
+# ── Rotaların (Endpoints) Sisteme Eklenmesi ────────────────────────────────────
+# Farklı işlevlere sahip denetleyicileri kendi URL önekleriyle (prefix) bağla
 app.include_router(security_controller.router, prefix="/api/v1")
 app.include_router(auth_controller.router, prefix="/api/v1/auth")
 app.include_router(admin_controller.router, prefix="/api/v1/admin")
-
+app.include_router(file_controller.router, prefix="/api/v1")
 
 
 @app.get("/api/v1/health", tags=["Health"])
 async def health_check():
-    """Sistemin ve modellerin çalışıp çalışmadığını kontrol eder."""
+    """
+    Sistemin ayakta olup olmadığını kontrol eden 'Canlılık' (Health Check) ucu.
+    Yük dengeleyiciler (Load Balancers) buraya istek atarak sunucuyu denetler.
+    """
     return {
         "status": "healthy",
         "timestamp": time.time(),
-        "model_loaded": False,  # Layer 2 disabled to avoid crashes
+        "model_loaded": False,  # Modelin yüklenme durumunu gösterir
         "message": "GenAI Security Gateway is running."
     }
 
 
-# ── Kullanıcıya Özel Endpoint'ler ──────────────────────────────────────────────
+# ── Kullanıcıya Özel Rotalar ───────────────────────────────────────────────────
 @app.get("/api/v1/user/stats", tags=["User"])
 async def get_user_stats(payload: dict = Depends(auth_controller.verify_token)):
-    """Giriş yapmış kullanıcının kendi istatistiklerini döner."""
+    """
+    Giriş yapmış (Token'ı doğrulanmış) kullanıcının şahsi istatistiklerini getirir.
+    Kaç prompt atmış, kaçı engellenmiş vb. bilgileri döner.
+    """
     username = payload.get("sub")
     stats = await DatabaseManager.get_stats(user_id=username)
     return stats
@@ -119,7 +138,10 @@ async def get_user_logs(
     category: Optional[str] = Query(default=None),
     payload: dict = Depends(auth_controller.verify_token)
 ):
-    """Giriş yapmış kullanıcının kendi log kayıtlarını döner."""
+    """
+    Giriş yapmış kullanıcının kendi gönderdiği log kayıtlarını listeler.
+    Filtreleme (örn: Sadece BLOCK olanlar) yapılabilir.
+    """
     username = payload.get("sub")
     logs = await DatabaseManager.get_logs(
         limit=limit,
@@ -130,7 +152,7 @@ async def get_user_logs(
     return {"count": len(logs), "logs": logs}
 
 
-# ── Log Listeleme Endpoint'i ───────────────────────────────────────────────────
+# ── Genel Log ve İstatistik Rotaları (Adminler İçin) ───────────────────────────
 @app.get("/api/v1/logs", tags=["Logs"])
 async def get_logs(
     limit: int = Query(default=50, ge=1, le=500, description="Kaç kayıt dönsün"),
@@ -138,8 +160,8 @@ async def get_logs(
     category: Optional[str] = Query(default=None, description="Safe, Injection, Blacklist, PII..."),
 ):
     """
-    Güvenlik log kayıtlarını filtreli olarak listeler.
-    Örnek: /api/v1/logs?limit=20&action=BLOCK&category=Injection
+    Tüm güvenlik log kayıtlarını (Kullanıcı fark etmeksizin) filtreli olarak listeler.
+    Admin paneline veri sağlamak için tasarlanmıştır.
     """
     logs = await DatabaseManager.get_logs(
         limit=limit,
@@ -149,33 +171,38 @@ async def get_logs(
     return {"count": len(logs), "logs": logs}
 
 
-# ── İstatistik Endpoint'i ──────────────────────────────────────────────────────
 @app.get("/api/v1/stats", tags=["Logs"])
 async def get_stats():
-    """Dashboard için özet istatistikler: toplam istek, engellenen, ortalama gecikme."""
+    """
+    Dashboard'daki grafikler ve KPI kartları için genel sistem istatistiklerini (toplam istek, gecikme vs.) döner.
+    """
     stats = await DatabaseManager.get_stats()
     return stats
 
 
-# ── Feedback Endpoint'i ────────────────────────────────────────────────────────
+# ── Geri Bildirim Rotası ───────────────────────────────────────────────────────
 @app.post("/api/v1/feedback", tags=["Feedback"])
 async def submit_feedback(log_id: str, correct_label: str):
     """
-    Yanlış engellemelerin (False Positive) raporlanması için kullanılır.
-    Örnek: { "log_id": "abc-123", "correct_label": "safe" }
+    Sistemin yanlış karar verdiği (False Positive/Negative) durumları raporlamak için kullanılır.
+    Kullanıcı arayüzünden 'Yanlış Karar' butonuna basıldığında tetiklenir.
     """
     success = await DatabaseManager.save_feedback(log_id, correct_label)
     return {"success": success, "message": f"Feedback kaydedildi: {log_id} → {correct_label}"}
 
-# ── Ayarlar (Kurallar) Endpoint'leri ───────────────────────────────────────────
+# ── Dinamik Kural Ayarları ─────────────────────────────────────────────────────
 @app.get("/api/v1/rules", tags=["Rules"])
 async def get_rules():
-    """Mevcut güvenlik ayarlarını getirir."""
+    """
+    Sistemdeki mevcut güvenlik ayarlarını (Threshold, aktif layer'lar vb.) JSON olarak okur.
+    """
     return ConfigManager.load_config()
 
 @app.post("/api/v1/rules", tags=["Rules"])
 async def update_rules(config: RulesConfig):
-    """Güvenlik ayarlarını günceller."""
+    """
+    Admin panelinden gelen yeni güvenlik kurallarını (örn: Layer 2'yi kapat) alır ve kaydeder.
+    """
     success = ConfigManager.save_config(config)
     if success:
         return {"success": True, "message": "Ayarlar güncellendi."}
@@ -183,11 +210,14 @@ async def update_rules(config: RulesConfig):
 
 @app.post("/api/v1/start-frontend", tags=["System"])
 async def start_frontend():
-    """Streamlit frontend'ini arka planda başlatır."""
+    """
+    Ayrı bir process (süreç) olarak Streamlit tabanlı önyüzü başlatır.
+    Port 8501'de zaten çalışıyorsa mevcut URL'yi döner.
+    """
     import subprocess
     import socket
     try:
-        # Check if already running on port 8501
+        # Streamlit'in (8501) zaten açık olup olmadığını kontrol et
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if s.connect_ex(('localhost', 8501)) == 0:
                 return {"success": True, "message": "Frontend zaten çalışıyor.", "url": "http://localhost:8501"}
@@ -196,7 +226,7 @@ async def start_frontend():
         venv_python = os.path.join(base_dir, ".venv", "Scripts", "python.exe")
         app_script = os.path.join(base_dir, "streamlit_app.py")
         
-        # Start in background without blocking
+        # Streamlit uygulamasını arka planda asenkron olarak tetikle
         subprocess.Popen(
             [venv_python, "-m", "streamlit", "run", app_script], 
             cwd=base_dir,
@@ -207,8 +237,7 @@ async def start_frontend():
         logger.error(f"Frontend başlatılamadı: {e}")
         return {"success": False, "message": f"Hata: {e}"}
 
-# ── Frontend (Dashboard) ───────────────────────────────────────────────────────
-# Kök path'e index.html serve et
+# ── Frontend (Dashboard) Sunumu ────────────────────────────────────────────────
+# / (kök) ve /dashboard adreslerine istek geldiğinde statik frontend klasöründeki index.html'i göster.
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
-# Alternative path
 app.mount("/dashboard", StaticFiles(directory="frontend", html=True), name="dashboard")

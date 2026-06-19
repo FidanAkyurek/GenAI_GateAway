@@ -1,3 +1,15 @@
+"""
+GenAI Security Gateway - Güvenlik Kontrolcüsü (Security Controller)
+
+Uygulamanın kalbidir. Kullanıcılardan veya dış sistemlerden gelen tüm metin (prompt) 
+istekleri ilk olarak bu dosyaya düşer. Gelen istekler sırasıyla:
+1. Katman 1 (Regex & Blacklist)
+2. Katman 2 (DeBERTa AI Modeli)
+3. Katman 3 (LLM Judge)
+kontrollerinden geçirilir ve sonuç veritabanına kaydedilir.
+Sistem "Fail-Open" veya "Fail-Closed" mantığına göre karar vererek istemciye döner.
+"""
+
 import time
 import uuid
 import logging
@@ -134,33 +146,80 @@ async def analyze_prompt(request: PromptRequest, http_req: Request = None):
     if config.layer_regex:
         regex_result = Layer1Regex.scan(processed_text, config.blacklist)
 
-        if regex_result.is_blocked:
-            stopped_at_layer = "Layer1"
-            latency = int((time.time() - start_time) * 1000)
-            await DatabaseManager.log_security_event(
-                log_id=log_id, user_id=request.user_id,
-                masked_prompt=processed_text, action="BLOCK",
-                category="Blacklist", stopped_at_layer=stopped_at_layer,
-                ai_score=0.0, latency_ms=latency,
-                company_id=request.company_id
-            )
-            logger.warning(f"🚫 BLOCK [Layer1/Blacklist] user={request.user_id} | {latency}ms")
+        # ══════════════════════════════════════════════════════════
+        # KATMAN 1.5: BLACKLIST BAĞLAM ANALİZİ (Akıllı Filtreleme)
+        # Yasaklı kelime bulunduysa → hemen engellemek yerine LLM Judge ile
+        # anlam bağlamını kontrol et. "bomba nedir?" → SAFE, "bomba yap" → UNSAFE
+        # ══════════════════════════════════════════════════════════
+        if regex_result.blacklist_hits:
+            matched_str = ', '.join(regex_result.blacklist_hits)
+            logger.info(f"🔍 Blacklist eşleşmesi: [{matched_str}] — Bağlam analizi başlatılıyor...")
             
-            block_explanation = None
-            if not request.is_test:
-                block_explanation = await LLMProxy.generate_block_explanation(
-                    prompt=request.text,
-                    category="Blacklist",
-                    reason="Yasaklı kelime tespit edildi."
+            if config.layer_llm and not request.is_test:
+                # LLM Judge ile bağlam analizi yap
+                blacklist_verdict = await Layer3LLMJudge.evaluate_blacklist_context(
+                    text=processed_text,
+                    matched_words=regex_result.blacklist_hits,
+                    history=request.conversation_history
                 )
-            
-            return PromptResponse(
-                log_id=log_id, status="BLOCK", category="Blacklist",
-                reason="Yasaklı kelime tespit edildi.",
-                llm_response=block_explanation,
-                active_layers={"layer1": config.layer_regex, "layer2": config.layer_deberta, "layer3": config.layer_llm},
-                latency_ms=latency
-            )
+                
+                if blacklist_verdict == "UNSAFE":
+                    # ❌ LLM Judge onayladı: gerçekten zararlı niyet
+                    stopped_at_layer = "Layer1+Layer3"
+                    latency = int((time.time() - start_time) * 1000)
+                    await DatabaseManager.log_security_event(
+                        log_id=log_id, user_id=request.user_id,
+                        masked_prompt=processed_text, action="BLOCK",
+                        category="Blacklist", stopped_at_layer=stopped_at_layer,
+                        ai_score=0.0, latency_ms=latency,
+                        company_id=request.company_id
+                    )
+                    logger.warning(f"🚫 BLOCK [Layer1+Layer3/Blacklist] user={request.user_id} | kelimeler=[{matched_str}] | {latency}ms")
+                    
+                    block_explanation = await LLMProxy.generate_block_explanation(
+                        prompt=request.text,
+                        category="Blacklist",
+                        reason=f"Yasaklı kelime tespit edildi ve bağlam analizi zararlı niyet buldu: {matched_str}"
+                    )
+                    
+                    return PromptResponse(
+                        log_id=log_id, status="BLOCK", category="Blacklist",
+                        reason=f"Yasaklı kelime tespit edildi ve bağlam analizi zararlı niyet buldu: {matched_str}",
+                        llm_response=block_explanation,
+                        active_layers={"layer1": config.layer_regex, "layer2": config.layer_deberta, "layer3": config.layer_llm},
+                        latency_ms=latency
+                    )
+                else:
+                    # ✅ LLM Judge: Eğitim/bilgi amaçlı sorgu — devam et
+                    logger.info(f"✅ Blacklist kelimesi [{matched_str}] bulundu ama bağlam GÜVENLİ. Devam ediliyor.")
+            else:
+                # LLM Judge kapalı veya test modu → fail-secure: engelle
+                stopped_at_layer = "Layer1"
+                latency = int((time.time() - start_time) * 1000)
+                await DatabaseManager.log_security_event(
+                    log_id=log_id, user_id=request.user_id,
+                    masked_prompt=processed_text, action="BLOCK",
+                    category="Blacklist", stopped_at_layer=stopped_at_layer,
+                    ai_score=0.0, latency_ms=latency,
+                    company_id=request.company_id
+                )
+                logger.warning(f"🚫 BLOCK [Layer1/Blacklist] user={request.user_id} | LLM Judge kapalı, fail-secure | {latency}ms")
+                
+                block_explanation = None
+                if not request.is_test:
+                    block_explanation = await LLMProxy.generate_block_explanation(
+                        prompt=request.text,
+                        category="Blacklist",
+                        reason="Yasaklı kelime tespit edildi."
+                    )
+                
+                return PromptResponse(
+                    log_id=log_id, status="BLOCK", category="Blacklist",
+                    reason="Yasaklı kelime tespit edildi.",
+                    llm_response=block_explanation,
+                    active_layers={"layer1": config.layer_regex, "layer2": config.layer_deberta, "layer3": config.layer_llm},
+                    latency_ms=latency
+                )
 
         # PII varsa maskele, durdur ve DLP_ALERT döner
         if regex_result.has_pii:
@@ -193,7 +252,7 @@ async def analyze_prompt(request: PromptRequest, http_req: Request = None):
     # KATMAN 2: ZEKA (DeBERTa AI Modeli)
     # ══════════════════════════════════════════════════════════
     THRESHOLD_HIGH = config.ai_threshold
-    THRESHOLD_LOW  = 0.35   # Bu skoru aşan → LLM Judge'a gönder (veya şüpheli)
+    THRESHOLD_LOW  = 0.60   # Bu skoru aşan → LLM Judge'a gönder (0.55 çok düşüktü, Türkçe günlük sorular tetikleniyordu)
 
     deberta_blocked = False
     if config.layer_deberta:
@@ -217,10 +276,14 @@ async def analyze_prompt(request: PromptRequest, http_req: Request = None):
     #   a) DeBERTa engelleme kararı verdiyse (deberta_blocked == True) -> Teyit için
     #   b) VEYA DeBERTa skoru gri bölgedeyse (ai_score >= THRESHOLD_LOW) -> İnceleme için
     #   c) VEYA DeBERTa katmanı kapalıysa -> Tüm mesajları incelemesi için (fail-secure)
+    # ✅ OPTİMİZASYON: Blacklist bağlam analizi zaten SAFE dönmüşse ve DeBERTa
+    # bloklamıyorsa, Layer 3'ü tekrar çağırmaya gerek yok (API çağrısı tasarrufu)
+    blacklist_already_cleared = bool(regex_result.blacklist_hits) and config.layer_llm
+    
     need_llm_judge = config.layer_llm and not request.is_test and (
         deberta_blocked or 
-        (config.layer_deberta and ai_score >= THRESHOLD_LOW) or 
-        not config.layer_deberta
+        (config.layer_deberta and ai_score >= THRESHOLD_LOW and not blacklist_already_cleared) or 
+        (not config.layer_deberta and not blacklist_already_cleared)
     )
 
     if need_llm_judge:

@@ -8,16 +8,17 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         :root {
-            --primary: #2d3ff5;
-            --primary-hover: #1e2bcc;
-            --bg-color: #f7f9fc;
-            --surface: #ffffff;
-            --text-main: #1e293b;
-            --text-muted: #64748b;
-            --border: #e2e8f0;
-            --radius: 8px;
-            --success: #22c55e;
-            --danger: #ef4444;
+            --bg: #0E0C18;
+            --surface: rgba(255, 255, 255, 0.04);
+            --border: rgba(255, 255, 255, 0.08);
+            --text-main: #FFFFFF;
+            --text-muted: #7C7A88;
+            --primary: #9D6EF8;
+            --primary-hover: #7C3AED;
+            --radius: 12px;
+            --success: #10B981;
+            --danger: #EF4444;
+            --accent-glow: rgba(157,110,248,0.45);
         }
 
         * {
@@ -28,35 +29,56 @@
         }
 
         body {
-            background-color: var(--bg-color);
+            background-color: var(--bg);
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
             color: var(--text-main);
+            overflow: hidden;
+            position: relative;
         }
 
+        /* ── AURORA BACKGROUND ── */
+        .aurora { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+        .aurora-blob {
+            position: absolute; border-radius: 50%;
+            filter: blur(110px); opacity: 0.3;
+            animation: drift 20s ease-in-out infinite alternate;
+        }
+        .a1 { width: 700px; height: 700px; background: #6D28D9; top: -250px; left: -120px; }
+        .a2 { width: 550px; height: 550px; background: #5B21B6; bottom: -180px; right: -120px; animation-delay: -7s; }
+        .a3 { width: 400px; height: 400px; background: #7C3AED; top: 25%; left: 40%; opacity: 0.18; animation-delay: -13s; }
+        @keyframes drift { from { transform: translate(0,0) scale(1); } to { transform: translate(50px,35px) scale(1.1); } }
+
+        /* ── LOGIN CONTAINER ── */
         .login-container {
             background: var(--surface);
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.05);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.05);
             width: 100%;
             max-width: 480px;
-            overflow: hidden;
             border: 1px solid var(--border);
             transition: max-width 0.3s ease;
+            position: relative;
+            z-index: 10;
         }
 
         .login-header {
-            padding: 2rem 2rem 1rem;
+            padding: 2.5rem 2rem 1.5rem;
             text-align: center;
         }
 
         .login-header h1 {
-            font-size: 1.5rem;
+            font-size: 1.8rem;
             font-weight: 700;
             margin-bottom: 0.5rem;
-            color: #0f172a;
+            color: var(--text-main);
+            background: linear-gradient(to right, #fff, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
 
         .login-header p {
@@ -68,7 +90,7 @@
             display: flex;
             padding: 0 2rem;
             border-bottom: 1px solid var(--border);
-            margin-bottom: 1.5rem;
+            margin-bottom: 2rem;
         }
 
         .tab {
@@ -94,9 +116,13 @@
             color: var(--primary);
             border-bottom-color: var(--primary);
         }
+        
+        .tab:hover:not(.active) {
+            color: var(--text-main);
+        }
 
         .login-form {
-            padding: 0 2rem 2rem;
+            padding: 0 2rem 2.5rem;
         }
 
         .form-group {
@@ -113,22 +139,24 @@
         .form-control {
             width: 100%;
             padding: 0.85rem 1rem;
+            background: rgba(255, 255, 255, 0.03);
             border: 1px solid var(--border);
             border-radius: var(--radius);
             font-size: 0.95rem;
             font-family: 'Outfit', sans-serif;
             outline: none;
-            transition: border-color 0.2s;
+            transition: all 0.2s;
             color: var(--text-main);
         }
 
         .form-control:focus {
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(45, 63, 245, 0.08);
+            background: rgba(255, 255, 255, 0.06);
+            box-shadow: 0 0 0 3px rgba(157, 110, 248, 0.15);
         }
 
         .form-control::placeholder {
-            color: #94a3b8;
+            color: #5A5868;
         }
 
         .password-toggle {
@@ -138,6 +166,11 @@
             transform: translateY(-50%);
             color: var(--text-muted);
             cursor: pointer;
+            transition: color 0.2s;
+        }
+        
+        .password-toggle:hover {
+            color: var(--text-main);
         }
 
         .options {
@@ -160,34 +193,46 @@
             accent-color: var(--primary);
             width: 16px;
             height: 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
         }
 
         .forgot-pwd {
             color: var(--text-muted);
             text-decoration: none;
+            transition: color 0.2s;
+        }
+        
+        .forgot-pwd:hover {
+            color: var(--primary);
         }
 
         .btn-submit {
             width: 100%;
             padding: 0.85rem;
-            background: var(--primary);
+            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
             color: white;
             border: none;
             border-radius: var(--radius);
             font-size: 1rem;
-            font-weight: 500;
+            font-weight: 600;
             font-family: 'Outfit', sans-serif;
             cursor: pointer;
-            transition: background 0.2s, opacity 0.2s;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(157, 110, 248, 0.25);
         }
 
         .btn-submit:hover {
-            background: var(--primary-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(157, 110, 248, 0.35);
         }
 
         .btn-submit:disabled {
-            opacity: 0.6;
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-muted);
+            box-shadow: none;
             cursor: not-allowed;
+            transform: none;
         }
 
         .captcha-box {
@@ -198,7 +243,7 @@
             border: 1px solid var(--border);
             border-radius: var(--radius);
             margin-bottom: 1.5rem;
-            background: #fafafa;
+            background: rgba(0, 0, 0, 0.2);
         }
 
         .captcha-left {
@@ -210,12 +255,13 @@
         .captcha-check {
             width: 24px;
             height: 24px;
-            background: #22c55e;
+            background: var(--success);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
             color: white;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
         }
 
         .captcha-right {
@@ -242,12 +288,13 @@
         }
 
         .divider span {
-            background: var(--surface);
+            background: var(--bg);
             padding: 0 10px;
             color: var(--text-muted);
             font-size: 0.9rem;
             position: relative;
             z-index: 2;
+            border-radius: 20px;
         }
 
         .social-buttons {
@@ -261,7 +308,7 @@
             padding: 0.75rem;
             border: 1px solid var(--border);
             border-radius: var(--radius);
-            background: white;
+            background: rgba(255, 255, 255, 0.03);
             cursor: pointer;
             display: flex;
             flex-direction: column;
@@ -275,7 +322,7 @@
 
         .btn-social:hover {
             border-color: var(--text-muted);
-            background: #f8fafc;
+            background: rgba(255, 255, 255, 0.06);
         }
 
         .btn-social img {
@@ -287,7 +334,6 @@
             text-align: center;
             font-size: 0.8rem;
             color: var(--text-muted);
-            margin-bottom: 1rem;
         }
 
         .terms a {
@@ -296,7 +342,7 @@
         }
 
         .login-footer {
-            background: #f8fafc;
+            background: rgba(0, 0, 0, 0.15);
             padding: 1.5rem;
             text-align: center;
             border-top: 1px solid var(--border);
@@ -309,13 +355,21 @@
             font-weight: 500;
             cursor: pointer;
         }
+        
+        .login-footer a:hover {
+            text-decoration: underline;
+        }
 
         #errorMsg, #registerErrorMsg {
-            color: #ef4444;
+            color: var(--danger);
             font-size: 0.9rem;
             margin-bottom: 1rem;
             text-align: center;
             display: none;
+            background: rgba(239, 68, 68, 0.1);
+            padding: 8px;
+            border-radius: var(--radius);
+            border: 1px solid rgba(239, 68, 68, 0.2);
         }
 
         #registerSuccessMsg {
@@ -324,12 +378,19 @@
             margin-bottom: 1rem;
             text-align: center;
             display: none;
+            background: rgba(16, 185, 129, 0.1);
+            padding: 8px;
+            border-radius: var(--radius);
+            border: 1px solid rgba(16, 185, 129, 0.2);
         }
 
         /* Password Strength Rules */
         .password-rules {
             margin-top: 0.75rem;
             margin-bottom: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 12px;
+            border-radius: var(--radius);
         }
 
         .password-rules h4 {
@@ -406,6 +467,8 @@
             height: 18px;
             margin-top: 2px;
             flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
         }
 
         .kvkk-label .required-star {
@@ -420,16 +483,22 @@
 
         .view-panel.active {
             display: block;
-            animation: fadeIn 0.3s ease;
+            animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(8px); }
-            to { opacity: 1; transform: translateY(0); }
+            from { opacity: 0; transform: translateY(12px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
         }
     </style>
 </head>
 <body>
+    <!-- Aurora Arka Plan Efekti -->
+    <div class="aurora">
+        <div class="aurora-blob a1"></div>
+        <div class="aurora-blob a2"></div>
+        <div class="aurora-blob a3"></div>
+    </div>
 
     <div class="login-container">
         <div class="login-header">

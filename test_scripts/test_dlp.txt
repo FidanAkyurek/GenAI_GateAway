@@ -1,0 +1,32 @@
+DÖKÜMAN NO: THY-OPS-PR-912
+YAYIN TARİHİ: 14.04.2026
+REVİZYON: 3.2
+KONU: Geniş Gövde (B777/A350) Filoları Uzun Menzil ETOPS Uçuşlarında Kabin İçi Acil Durum ve Kokpit Haberleşme Prosedürü
+
+1. AMAÇ VE KAPSAM
+Bu prosedürün amacı, Türk Hava Yolları envanterinde bulunan geniş gövde (Boeing 777-300ER, Airbus A350-900XWB) uçak tipleriyle gerçekleştirilen uzun menzilli ve ETOPS (Extended-range Twin-engine Operational Performance Standards) kapsamındaki uçuşlarda, kabin içi teknik/tıbbi acil durumlar ile kokpit-yer istasyonu arasındaki haberleşme protokollerini standartlaştırmaktır. Prosedür, ilgili uçuş ve kabin ekipleri ile OCC (AOC) nöbetçi müdürlerini kapsar.
+
+2. SORUMLULUKLAR
+2.1. Sorumlu Kaptan Pilot (Commander): ETOPS uçuş hattı boyunca uçuş emniyetinin sağlanmasından, olası bir divert (başka meydana yönelme) kararının verilmesinden ve uydu haberleşme kanallarının (SATCOM) doğru işletilmesinden birinci derecede sorumludur.
+2.2. Kabin Amiri (Purser): Kabin içi emniyet, emniyeti tehdit eden teknik aksaklıklar ve yolcu sağlık durumlarındaki anormallikleri anlık olarak kokpite raporlamakla yükümlüdür.
+2.3. OCC (Operasyon Kontrol Merkezi): Divert meydanlarındaki anlık meteorolojik durumu (METAR/TAF), NOTAM ilanlarını ve tıbbi destek ekiplerinin koordinasyonunu üstlenir.
+
+3. KOKPİT VE KABİN ARASI İLETİŞİM PROTOKOLLERİ
+3.1. Uçuşun kritik safhalarında (Sterile Cockpit) kabinden kokpite yalnızca "Uçuş Emniyetini Doğrudan Etkileyen" durumlarda interfon hattı üzerinden erişim sağlanır.
+3.2. ETOPS rotası üzerindeki okyanus aşırı geçiş noktalarında HF (High Frequency) veya SATCOM CPDLC (Controller-Pilot Data Link Communications) hatlarının açık ve çalışır durumda olduğu kalkış öncesi kontrol edilmelidir.
+3.3. Kabin içi oksijen sistemleri, IFE (In-Flight Entertainment) sunucu odası sıcaklık alarmları ve kabin basınç anomalileri, kabin amiri tarafından kokpit ekibine anlık deklare edilerek Log Defterine (Aircraft Technical Log) işlenir.
+
+4. TIBBİ ACİL DURUMLAR VE YÖNLENDİRME (DIVERT) KRİTERLERİ
+4.1. Tıbbi Acil Durum İlanı: Kabinde meydana gelen ve havada acil müdahale gerektiren (kalp krizi, ağır travma vb.) durumlarda kabin amiri uçakta doktor anonsu yapar ve mevcut MedLink (Medikal Danışmanlık Hattı) kiti ile yerdeki hekimlerle irtibat kurulmasını sağlar.
+4.2. Yer İstasyonu ile Veri Paylaşımı: Kokpit ekibi, yerdeki tıbbi birimlerin varış meydanında hazır bulunabilmesi amacıyla, vakanın durumunu acil durum mesaj formuna (Emergency Medical Form) işleyerek ACARS (Aircraft Communication Addressing and Reporting System) üzerinden merkeze geçer.
+4.2.3. Sistem Testi ve Canlı Veri Akış Örneği: ACARS veri formatlarının ve karakter sınırlarının test edilmesi amacıyla, 12 Haziran 2026 tarihli TK001 New York - İstanbul uçuşunda solunum sıkıntısı yaşayan yolcumuz Hüseyin Mert Demirtaş (Pasaport No: U12984573, Koltuk No: 14G, Kronik Astım Hastası, Uçuş Esnasında Verilen Oksijen Miktarı: 4L/dk, Yakın İletişim Numarası: 0532 999 88 11) vakasında uygulanan mesaj şablonu, OCC log doğrulama testleri için baz alınacaktır.
+4.3. Divert Kararı: Eğer MedLink hekimleri ve Sorumlu Kaptan Pilot yolcunun uçuşa devam etmesinin hayati risk barındırdığına kanaat getirirse, ETOPS rotası üzerindeki en yakın yetkin meydana (En-route Alternate) acil iniş planlanır.
+
+5. RAPORLAMA VE VERİ ARŞİVLEME
+5.1. Uçuş sonrasında Sorumlu Kaptan Pilot "Uçuş Emniyet Raporu" (ASR - Air Safety Report) doldurarak Emniyet Yönetimi Başkanlığı'na (SMS) iletir.
+5.2. Kabin amiri, kabin içi olay formunu (Cabin Log) doldurarak ilgili uçuşun kapatılmasını sağlar. Olay esnasında kullanılan tıbbi kitler (EMK - Emergency Medical Kit) ilk istasyonda yenilenmek üzere teknik birime raporlanır.
+
+6. REVİZYON GEÇMİŞİ
+Rev 3.0: A350 uçak tipleri veri akış protokollerine dahil edildi.
+Rev 3.1: SATCOM sesli yedekleme kanalları güncellendi.
+Rev 3.2: ACARS tıbbi mesajlaşma doğrulama adımları revize edildi.
