@@ -31,21 +31,20 @@ class Layer1Regex:
 
     # --- PII (Hassas Veri) Tespit Desenleri (Düzenli İfadeler - Regular Expressions) ---
     
-    # T.C. Kimlik Numarası Formatı: Tam 11 haneli olmalı, 0 ile başlayamaz.
-    # \b sınırlandırıcıları sayesinde başka bir uzun sayının içindeki 11 haneyi yanlışlıkla yakalamaz.
-    TC_PATTERN = re.compile(r'\b[1-9][0-9]{10}\b')
+    # T.C. Kimlik Numarası Formatı: 11 haneli, aralarda boşluk olabilir.
+    TC_PATTERN = re.compile(r'\b[1-9](?:[\s]*\d){10}\b')
     
     # Kredi Kartı Numarası Formatı: 16 haneli (kullanıcılar araya boşluk veya tire koymuş olabilir)
-    CC_PATTERN = re.compile(r'\b(?:\d[ -]*?){13,16}\b')
+    CC_PATTERN = re.compile(r'\b(?:\d[ -]*?){15,16}\b')
     
     # Standart E-posta Adresi Formatı (isim@domain.com vb.)
     EMAIL_PATTERN = re.compile(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+')
     
-    # Türkiye Formatlı Cep Telefonu Formatı: (+90532..., 0532..., 532...)
-    PHONE_PATTERN = re.compile(r'\b(?:\+90|0090|0)?[- ]?5\d{2}[- ]?\d{3}[- ]?\d{2}[- ]?\d{2}\b')
+    # Türkiye Formatlı Cep Telefonu Formatı: (+90, 0, parantezler, boşluklar vb.)
+    PHONE_PATTERN = re.compile(r'\b(?:\+90|0090|0)?[\s]*\(?5\d{2}\)?[\s.-]*\d{3}[\s.-]*\d{2}[\s.-]*\d{2}\b')
     
-    # IBAN Formatı: TR ile başlar ve devamında 24 karakter içerir.
-    IBAN_PATTERN = re.compile(r'\bTR\d{2}[0-9A-Z]{22}\b', re.IGNORECASE)
+    # IBAN Formatı: TR ile başlar ve devamında 24 karakter içerir (aralarda boşluk olabilir).
+    IBAN_PATTERN = re.compile(r'\bTR[\s]*\d{2}(?:[\s]*[0-9A-Z]){22}\b', re.IGNORECASE)
 
     @classmethod
     def scan(cls, text: str, dynamic_blacklist: list = None) -> Layer1Result:

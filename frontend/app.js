@@ -11,7 +11,7 @@
  * 4. Animasyonlar ve bildirim (toast) mesajları
  */
 
-const API_BASE = '/api/v1';
+const API_BASE = 'http://127.0.0.1:8001/api/v1';
 
 const notifiedLogs = new Set();
 

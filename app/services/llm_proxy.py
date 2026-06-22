@@ -25,13 +25,12 @@ class LLMProxy:
     
     # Model zinciri: birincil → fallback sırasıyla denenir (quota dolunca sonrakine geçilir)
     _MODELS_CHAIN = [
-        'gemini-2.5-flash',
-        'gemini-2.0-flash',
-        'gemini-2.0-flash-lite',
+        'gemini-flash-lite-latest',
         'gemini-flash-latest',
+        'gemini-pro-latest'
     ]
-    _PRIMARY_MODEL = 'gemini-2.5-flash'
-    _FALLBACK_MODEL = 'gemini-2.0-flash'
+    _PRIMARY_MODEL = 'gemini-flash-lite-latest'
+    _FALLBACK_MODEL = 'gemini-flash-latest'
     
     # LRU Cache — son 200 benzersiz isteğin cevabını tut
     _response_cache = OrderedDict()
@@ -310,7 +309,7 @@ class LLMProxy:
             )
             
             response = await client.aio.models.generate_content(
-                model='gemini-2.5-flash',
+                model=cls._PRIMARY_MODEL,
                 contents=user_message,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction

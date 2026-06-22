@@ -1054,7 +1054,7 @@
 </div>
 
 <script>
-const API_BASE = '/api/v1';
+const API_BASE = 'http://127.0.0.1:8001/api/v1';
 let chatHistory = [];
 let welcomeShown = true;
 let attachedFiles = [];
@@ -1666,7 +1666,7 @@ async function readTextFiles(files) {
         const isText = textTypes.some(t => file.type.startsWith(t)) ||
                        /\.(txt|py|js|ts|json|csv|md|html|css|xml|yaml|yml|sh|bat|sql)$/i.test(file.name);
                        
-        const isDoc = /\.(pdf|docx|pptx)$/i.test(file.name);
+        const isDoc = /\.(pdf|docx|pptx|png|jpg|jpeg|webp|bmp)$/i.test(file.name);
         
         if (isText && file.size < 500000) { // Max 500KB
             try {
@@ -1710,18 +1710,30 @@ function detectLLMRefusal(text) {
     const lower = text.toLowerCase();
     const refusalPatterns = [
         // Türkçe reddetme kalıpları
+        'üzgünüm, ancak',
+        'üzgünüm, bu',
+        'üzgünüm, size',
+        'maalesef bu konuda',
+        'maalesef yardımcı',
+        'bilgi sağlayamam',
+        'yöntem sağlayamam',
+        'hiçbir bilgi veya yöntem sağlayamam',
         'kesinlikle yerine getiremem',
         'yerine getiremem',
         'bu isteği yerine getiremem',
         'bu tür bilgileri paylaşamam',
+        'bilgileri paylaşamam',
         'bu bilgiyi sağlayamam',
         'bu konuda yardımcı olamam',
         'yardımcı olamam',
         'tehlikeli ve yasa dışı',
         'yasa dışı bir faaliyet',
+        'yasa dışı faaliyetlerin',
         'yasadışı',
         'son derece tehlikeli',
         'ciddi yasal sonuçlara',
+        'ciddi yasal sonuçlar',
+        'yasal sonuçlar doğurur',
         'insanları tehlikeye',
         'güvenliği ve yasalara uygunluğu',
         'bu bilgiyi vermem uygun olmaz',
@@ -2034,6 +2046,7 @@ async function dlpMaskAndSend() {
     const payload = {
         text: ctx.maskedText,
         user_id: ctx.userId,
+        bypass_action: "auto_mask",
         conversation_history: safeHistory
     };
 

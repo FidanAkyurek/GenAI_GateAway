@@ -50,6 +50,9 @@ def cleanup_processes():
 def main():
     global backend_process, streamlit_process
     
+    if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+    
     print("="*60)
     print("GenAI Security Gateway - Başlangıç")
     print("="*60)

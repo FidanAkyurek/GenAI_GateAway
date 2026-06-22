@@ -681,6 +681,7 @@
     </div>
 
     <script>
+        const API_BASE = 'http://127.0.0.1:8001/api/v1';
         lucide.createIcons();
 
         // ─── VIEW TOGGLE ────────────────────────────────────────────
@@ -727,7 +728,7 @@
             const height = 600;
             const left = window.screen.width / 2 - width / 2;
             const top = window.screen.height / 2 - height / 2;
-            window.open(`/api/v1/auth/login/${provider}`, 'OAuth', `width=${width},height=${height},top=${top},left=${left}`);
+            window.open(`${API_BASE}/auth/login/${provider}`, 'OAuth', `width=${width},height=${height},top=${top},left=${left}`);
         }
 
         // Listen for OAuth messages from popup
@@ -811,7 +812,7 @@
             const password = document.getElementById('password').value;
 
             try {
-                const res = await fetch('/api/v1/auth/login', {
+                const res = await fetch(`${API_BASE}/auth/login`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username, password })
@@ -859,7 +860,7 @@
             const full_name = `${firstName} ${lastName}`.trim();
 
             try {
-                const res = await fetch('/api/v1/auth/register', {
+                const res = await fetch(`${API_BASE}/auth/register`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username, password, email, phone, full_name })
@@ -874,7 +875,7 @@
 
                     // Otomatik giriş yap
                     try {
-                        const loginRes = await fetch('/api/v1/auth/login', {
+                        const loginRes = await fetch(`${API_BASE}/auth/login`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ username, password })

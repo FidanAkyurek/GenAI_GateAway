@@ -23,13 +23,12 @@ class Layer3LLMJudge:
 
     # Model zinciri: birincil → fallback sırasıyla denenir
     _MODELS_CHAIN = [
-        'gemini-2.5-flash',
-        'gemini-2.0-flash',
-        'gemini-2.0-flash-lite',
+        'gemini-flash-lite-latest',
         'gemini-flash-latest',
+        'gemini-pro-latest'
     ]
-    _model_name = 'gemini-2.5-flash'
-    _fallback_model = 'gemini-2.0-flash'
+    _model_name = 'gemini-flash-lite-latest'
+    _fallback_model = 'gemini-flash-latest'
 
     @classmethod
     def _init_clients(cls):

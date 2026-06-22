@@ -560,7 +560,8 @@ class DatabaseManager:
         full_name: str = "", 
         role: str = "employee",
         company_id: int = None,
-        department: str = ""
+        department: str = "",
+        profile_photo: str = ""
     ) -> bool:
         """Yeni bir kullanıcı oluşturur."""
         created_at = datetime.now().isoformat()
@@ -568,9 +569,9 @@ class DatabaseManager:
             try:
                 async with aiosqlite.connect(SQLITE_PATH) as db:
                     await db.execute(
-                        """INSERT INTO users (username, password_hash, email, phone, full_name, role, company_id, created_at, department)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (username, password_hash, email, phone, full_name, role, company_id, created_at, department)
+                        """INSERT INTO users (username, password_hash, email, phone, full_name, role, company_id, created_at, department, profile_photo)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (username, password_hash, email, phone, full_name, role, company_id, created_at, department, profile_photo)
                     )
                     await db.commit()
                 return True
@@ -582,9 +583,9 @@ class DatabaseManager:
             try:
                 async with cls._pool.acquire() as conn:
                     await conn.execute(
-                        """INSERT INTO users (username, password_hash, email, phone, full_name, role, company_id, created_at, department)
-                           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
-                        username, password_hash, email, phone, full_name, role, company_id, created_at, department
+                        """INSERT INTO users (username, password_hash, email, phone, full_name, role, company_id, created_at, department, profile_photo)
+                           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)""",
+                        username, password_hash, email, phone, full_name, role, company_id, created_at, department, profile_photo
                     )
                 return True
             except Exception as e:

@@ -17,6 +17,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from app.models.schemas import PromptRequest, PromptResponse
 from app.services.layer1_regex import Layer1Regex, Layer1Result
+from app.services.layer1_5_anonymizer import Layer1_5_Anonymizer
 from app.services.layer2_deberta import Layer2DeBERTa
 from app.services.layer3_llm_judge import Layer3LLMJudge
 from app.services.database_manager import DatabaseManager
@@ -143,7 +144,14 @@ async def analyze_prompt(request: PromptRequest, http_req: Request = None):
     # ══════════════════════════════════════════════════════════
     # KATMAN 1: REFLEKS (Regex & DLP - PII Maskeleme)
     # ══════════════════════════════════════════════════════════
-    if config.layer_regex:
+    if request.bypass_action == "auto_mask":
+        processed_text = request.text
+        regex_result = Layer1Result(is_blocked=False, has_pii=False, processed_text=processed_text)
+        final_processed_text = processed_text
+        has_pii_final = False
+        detected_entities = []
+        logger.info(f"✅ OTO-MASKE ONAYI [auto_mask] user={request.user_id} | Layer 1 atlanıyor.")
+    elif config.layer_regex:
         regex_result = Layer1Regex.scan(processed_text, config.blacklist)
 
         # ══════════════════════════════════════════════════════════
@@ -221,29 +229,51 @@ async def analyze_prompt(request: PromptRequest, http_req: Request = None):
                     latency_ms=latency
                 )
 
+        # ══════════════════════════════════════════════════════════
+        # KATMAN 1.5: YAPAY ZEKA ANONYMİZER
+        # Regex'in kaçırdığı özel isimleri, adresleri vb. maskeler
+        # ══════════════════════════════════════════════════════════
+        if not request.is_test:
+            anonymizer_result = await Layer1_5_Anonymizer.scan(regex_result.processed_text)
+            final_processed_text = anonymizer_result.processed_text
+            has_pii_final = regex_result.has_pii or anonymizer_result.has_pii
+            
+            # Entity'leri birleştir
+            detected_entities = regex_result.detected_entities.copy() if regex_result.detected_entities else []
+            if anonymizer_result.detected_entities:
+                for e in anonymizer_result.detected_entities:
+                    if e not in detected_entities:
+                        detected_entities.append(e)
+        else:
+            final_processed_text = regex_result.processed_text
+            has_pii_final = regex_result.has_pii
+            detected_entities = regex_result.detected_entities
+
         # PII varsa maskele, durdur ve DLP_ALERT döner
-        if regex_result.has_pii:
-            stopped_at_layer = "Layer1"
+        if has_pii_final:
+            stopped_at_layer = "Layer1.5" if anonymizer_result.has_pii else "Layer1"
             latency = int((time.time() - start_time) * 1000)
             await DatabaseManager.log_security_event(
                 log_id=log_id, user_id=request.user_id,
-                masked_prompt=regex_result.processed_text, action="BLOCK",
+                masked_prompt=final_processed_text, action="BLOCK",
                 category="PII", stopped_at_layer=stopped_at_layer,
                 ai_score=0.0, latency_ms=latency,
                 company_id=request.company_id,
                 bypass_status="Blocked (DLP Alert)"
             )
-            logger.warning(f"🔒 DLP ALERT [Layer1/PII] user={request.user_id} | {latency}ms")
+            logger.warning(f"🔒 DLP ALERT [Layer1.5/PII] user={request.user_id} | {latency}ms")
             
             return PromptResponse(
                 log_id=log_id, status="DLP_ALERT", category="PII",
                 reason="KVKK veya kurum politikalarına aykırı hassas veri tespit edildi.",
-                processed_text=regex_result.processed_text,
+                processed_text=final_processed_text,
                 active_layers={"layer1": config.layer_regex, "layer2": config.layer_deberta, "layer3": config.layer_llm},
                 latency_ms=latency,
-                detected_entities=regex_result.detected_entities,
+                detected_entities=detected_entities,
                 bypass_status="Blocked (DLP Alert)"
             )
+            
+        processed_text = final_processed_text
     else:
         # Regex motoru kapalı ise, sadece dummy result oluştur (Loglama için Pii=False varsayarız)
         regex_result = Layer1Result(is_blocked=False, has_pii=False, processed_text=processed_text)
