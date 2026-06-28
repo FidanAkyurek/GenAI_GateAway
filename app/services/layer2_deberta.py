@@ -17,6 +17,10 @@ class Layer2DeBERTa:
     _classifier = None
     # Tezinizde bahsedilen ProtectAI'ın önceden eğitilmiş (pre-trained) modeli
     _model_name = "protectai/deberta-v3-base-prompt-injection-v2"
+    
+    # Kullanıcı tarafından eğitilmiş yerel (fine-tuned) modelin yolu
+    import os
+    _local_model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "models", "fine_tuned_deberta")
 
     @classmethod
     def load_model(cls):
@@ -32,8 +36,15 @@ class Layer2DeBERTa:
             try:
                 if pipeline is None:
                     raise ImportError("transformers kütüphanesi kurulu değil")
-                logger.info(f"⏳ Katman 2 (DeBERTa) yükleniyor: {cls._model_name}")
-                cls._classifier = pipeline("text-classification", model=cls._model_name)
+                
+                # Önce kullanıcıya ait ince ayar yapılmış (fine-tuned) model var mı kontrol et
+                if os.path.exists(cls._local_model_path):
+                    logger.info(f"⏳ Katman 2 (DeBERTa) yükleniyor [FINE-TUNED YEREL MODEL]: {cls._local_model_path}")
+                    cls._classifier = pipeline("text-classification", model=cls._local_model_path)
+                else:
+                    logger.info(f"⏳ Katman 2 (DeBERTa) yükleniyor [VARSAYILAN MODEL]: {cls._model_name}")
+                    cls._classifier = pipeline("text-classification", model=cls._model_name)
+                    
                 logger.info("✅ Katman 2 (DeBERTa) başarıyla yüklendi!")
             except Exception as e:
                 logger.error(f"❌ Katman 2 yüklenirken hata oluştu: {e}")
