@@ -24,6 +24,13 @@ from app.services.database_manager import DatabaseManager
 from app.services.llm_proxy import LLMProxy
 from app.config_manager import ConfigManager
 
+=======
+# Basit bellek-içi önbellek (In-Memory Cache). 
+# Aynı prompt tekrar gelirse saniyesinde dönmek için kullanılır.
+from typing import Dict, Any
+_PROMPT_CACHE: Dict[str, dict] = {}
+
+>>>>>>> friend/main
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -71,6 +78,34 @@ async def analyze_prompt(request: PromptRequest, http_req: Request = None):
         user_info = await DatabaseManager.get_user_by_username(request.user_id)
         if user_info and user_info.get("company_id"):
             request.company_id = user_info["company_id"]
+
+    # ══════════════════════════════════════════════════════════
+<<<<<<< HEAD
+    # ÖNBELLEK (CACHE) KONTROLÜ
+    # Aynı soru daha önce geldiyse yapay zekayı hiç yormadan anında dön
+    # ══════════════════════════════════════════════════════════
+    if not request.bypass_action and not request.is_test and request.text in _PROMPT_CACHE:
+        cached = _PROMPT_CACHE[request.text]
+        latency = int((time.time() - start_time) * 1000)
+        
+        await DatabaseManager.log_security_event(
+            log_id=log_id, user_id=request.user_id,
+            masked_prompt=request.text, action=cached["status"],
+            category=cached["category"], stopped_at_layer="Cache (Önbellek)",
+            ai_score=cached["ai_score"], latency_ms=latency,
+            company_id=request.company_id
+        )
+        logger.info(f"⚡ CACHE HIT (Önbellek) | user={request.user_id} | {latency}ms")
+        
+        return PromptResponse(
+            log_id=log_id, status=cached["status"], category=cached["category"],
+            reason=cached.get("reason"),
+            processed_text=request.text,
+            llm_response=cached["llm_response"],
+            active_layers={"layer1": config.layer_regex, "layer2": config.layer_deberta, "layer3": config.layer_llm},
+            latency_ms=latency,
+            detected_entities=cached.get("detected_entities", [])
+        )
 
     # ══════════════════════════════════════════════════════════
     # BYPASS VEYA ONAY TALEBİ KONTROLÜ
@@ -341,6 +376,15 @@ async def analyze_prompt(request: PromptRequest, http_req: Request = None):
                 reason=reason
             )
             
+=======
+            if not request.is_test:
+                _PROMPT_CACHE[request.text] = {
+                    "status": "BLOCK", "category": category, 
+                    "reason": reason, "llm_response": block_explanation, 
+                    "ai_score": ai_score
+                }
+                
+>>>>>>> friend/main
             return PromptResponse(
                 log_id=log_id, status="BLOCK", category=category,
                 reason=reason,
@@ -370,6 +414,15 @@ async def analyze_prompt(request: PromptRequest, http_req: Request = None):
             reason=f"Saldırı girişimi tespit edildi. (AI Skoru: {ai_score:.2f})"
         )
         
+<<<<<<< HEAD
+        if not request.is_test:
+            _PROMPT_CACHE[request.text] = {
+                "status": "BLOCK", "category": "Injection", 
+                "reason": f"Saldırı girişimi tespit edildi. (AI Skoru: {ai_score:.2f})", 
+                "llm_response": block_explanation, 
+                "ai_score": ai_score
+            }
+            
         return PromptResponse(
             log_id=log_id, status="BLOCK", category="Injection",
             reason=f"Saldırı girişimi tespit edildi. (AI Skoru: {ai_score:.2f})",
@@ -400,6 +453,16 @@ async def analyze_prompt(request: PromptRequest, http_req: Request = None):
     else:
         llm_response_text = await LLMProxy.generate_response(processed_text, request.conversation_history)
 
+<<<<<<< HEAD
+=======
+    if not request.is_test:
+        _PROMPT_CACHE[request.text] = {
+            "status": "ALLOW", "category": category, 
+            "reason": None, "llm_response": llm_response_text, 
+            "ai_score": ai_score
+        }
+
+>>>>>>> friend/main
     return PromptResponse(
         log_id=log_id, status="ALLOW", category=category,
         processed_text=processed_text,

@@ -1,33 +1,80 @@
 import re
-from dataclasses import dataclass
+    
+    DYNAMIC_BLACKLIST_PATH = os.path.join(os.path.dirname(__file__), "dynamic_blacklist.json")
+    
+    @classmethod
+    def get_blacklist(cls):
+        dynamic_list = []
+        if os.path.exists(cls.DYNAMIC_BLACKLIST_PATH):
+            try:
+                with open(cls.DYNAMIC_BLACKLIST_PATH, "r", encoding="utf-8") as f:
+                    dynamic_list = json.load(f)
+            except Exception:
+                pass
+        return cls.CORE_BLACKLIST + dynamic_list
 
-@dataclass
-class Layer1Result:
-    """
-    Katman 1 (Regex & Blacklist) taramasının sonucunu taşıyan Veri Sınıfı (Data Class).
-    Tarama işlemi bittikten sonra sonuçlar bir sözlük (dictionary) yerine 
-    bu sınıfa dönüştürülerek Controller'a daha güvenli ve tip destekli (type-hinted) iletilir.
-    """
-    is_blocked: bool                # İşlem doğrudan engellendi mi? (Artık kullanılmıyor, Fail-Open mantığına geçildi)
-    has_pii: bool                   # Metin içinde T.C. Kimlik, Kredi Kartı gibi PII verisi bulundu mu?
-    processed_text: str             # Eğer PII bulunduysa, "12*******34" şeklinde maskelenmiş temiz metin.
-    detected_entities: list[str] = None  # Hangi PII türleri bulundu? (Örn: ["T.C. Kimlik No", "Email"])
-    blacklist_hits: list[str] = None     # Metinde yakalanan yasaklı kelimeler (Bağlam analizi için Layer 3'e gönderilecek)
-
-
-class Layer1Regex:
-    """
-    GenAI Security Gateway - Katman 1 (Hızlı Refleks Katmanı)
-    Amacı: Gelen metni 5 milisaniyenin altında çok hızlı bir statik taramadan geçirmek.
-    İşlevleri:
-    1. Metin içindeki Yasaklı Kelimeleri (Blacklist) bulmak (ancak doğrudan engellemez, bağlama bırakır).
-    2. DLP (Data Loss Prevention) uygulayarak, dışarı çıkmaması gereken hassas verileri yıldızlayarak (****) maskelemek.
-    """
-
-    # Yasaklı kelimeler (Blacklist) dışarıdan yükleniyor. 
-    # Bu liste Admin panelinden de anlık olarak güncellenebilir.
-    from app.services.core_blacklist import CORE_BLACKLIST
-    BLACKLIST = CORE_BLACKLIST
+    @classmethod
+    async def learn_from_attack(cls, prompt: str):
+        """
+        Gelen saldırı promptunu LLM Yargıca (Gemini) gönderir.
+        LLM, cümlenin içinden günlük kelimeleri (isim, nesne vb.) atarak
+        SADECE siber saldırı/manipülasyon (exploit, bypass, hack) kelimelerini çıkarır.
+        Sistem bu teknik kelimeleri dynamic_blacklist.json dosyasına ekler.
+        """
+        try:
+            from app.services.layer3_llm_judge import Layer3LLMJudge
+            client, model_name, key_info = Layer3LLMJudge._get_client()
+            
+            if not client:
+                return # API Key yoksa öğrenme yapma
+                
+            system_instruction = (
+                "You are an expert cybersecurity AI. Your task is to extract ONLY the malicious, technical, "
+                "or rule-breaking keywords from the given attack prompt. Ignore normal names, daily words (like fatma, otel, para), "
+                "or stop words. Return ONLY a comma-separated list of the extracted keywords in lowercase. "
+                "If there are no specific malicious keywords, return 'NONE'."
+            )
+            
+            response = await client.aio.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config={
+                    "system_instruction": system_instruction,
+                    "temperature": 0.1
+                }
+            )
+            
+            result = response.text.strip().lower()
+            if result == "none" or not result:
+                return
+            
+            # LLM'in verdiği kelimeleri virgülle ayır, boşlukları temizle
+            extracted_words = [w.strip() for w in result.split(",") if len(w.strip()) > 2]
+            
+            if not extracted_words:
+                return
+                
+            dynamic_list = []
+            if os.path.exists(cls.DYNAMIC_BLACKLIST_PATH):
+                try:
+                    with open(cls.DYNAMIC_BLACKLIST_PATH, "r", encoding="utf-8") as f:
+                        dynamic_list = json.load(f)
+                except Exception:
+                    pass
+                    
+            added = False
+            for nw in extracted_words:
+                if nw not in dynamic_list and nw not in cls.CORE_BLACKLIST:
+                    dynamic_list.append(nw)
+                    added = True
+                    
+            if added:
+                with open(cls.DYNAMIC_BLACKLIST_PATH, "w", encoding="utf-8") as f:
+                    json.dump(dynamic_list, f, ensure_ascii=False, indent=2)
+                    
+        except Exception as e:
+            # LLM hatası olursa sistemi kilitleme, sessizce geç
+            pass
 
     # --- PII (Hassas Veri) Tespit Desenleri (Düzenli İfadeler - Regular Expressions) ---
     
@@ -63,6 +110,7 @@ class Layer1Regex:
         # Metni küçük harfe çevirerek büyük-küçük harf duyarlılığını ortadan kaldırıyoruz.
         text_lower = text.lower()
         words_to_check = cls.BLACKLIST + (dynamic_blacklist if dynamic_blacklist is not None else [])
+        words_to_check = cls.get_blacklist() + (dynamic_blacklist if dynamic_blacklist is not None else [])
         
         if words_to_check:
             # Optimizasyon: Binlerce kelimeyi tek tek aramak yerine, tüm kelimeleri birleştirip 

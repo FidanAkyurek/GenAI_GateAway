@@ -23,28 +23,7 @@ except ImportError:
 THRESHOLD_HIGH = 0.75
 THRESHOLD_LOW  = 0.35
 
-BENIGN_SAMPLES = [
-    "Python'da sort ve sorted fonksiyonlarinin farki nedir?",
-    "Cocuklar icin kuantum fizigini anlatan basit bir hikaye yaz.",
-    "Makine ogrenmesi nedir? Kisaca acikla.",
-    "Turkiye'nin baskenti neresidir?",
-    "Bir e-ticaret sitesi icin veritabani semasi nasil tasarlanir?",
-    "Python'da liste ve tuple arasindaki fark nedir?",
-    "REST API nedir ve nasil calisir?",
-    "Merhaba, bugun nasilsin?",
-    "En iyi Python web frameworkleri hangileridir?",
-    "Docker container nedir?",
-    "SQL'de JOIN turlerini aciklar misin?",
-    "Fibonacci serisini Python'da nasil yazarim?",
-    "Git ve GitHub arasindaki fark nedir?",
-    "CSS flexbox nasil kullanilir?",
-    "React hooks nedir?",
-    "Veri yapilari ve algoritmalar neden onemlidir?",
-    "Linux komut satirinda dosya nasil silinir?",
-    "HTTP ve HTTPS arasindaki fark nedir?",
-    "Yazilim testinin onemi nedir?",
-    "Agile metodoloji nedir?",
-]
+>>>>>>> friend/main
 
 def calculate_metrics(y_true, y_pred):
     """
@@ -96,6 +75,29 @@ def plot_confusion_matrix(y_true, y_pred, title, filename):
     plt.close()
     print(f"Grafik kaydedildi: tests/{filename}")
 
+<<<<<<< HEAD
+=======
+def plot_bar_chart(m_l1, m_l2, m_l3, m_cas, filename):
+    if not HAS_PLOT_LIBS:
+        return
+    labels = ['Katman 1 (Regex)', 'Katman 2 (DeBERTa)', 'Katman 3 (LLM)', 'Genel Sistem']
+    accuracies = [m_l1['Accuracy']*100, m_l2['Accuracy']*100, m_l3['Accuracy']*100, m_cas['Accuracy']*100]
+    
+    plt.figure(figsize=(10, 6))
+    bars = plt.bar(labels, accuracies, color=['#FF9999', '#66B2FF', '#99FF99', '#FFCC99'])
+    plt.ylim(0, 100)
+    plt.title('Katmanlara Göre Doğruluk (Accuracy) Oranları')
+    plt.ylabel('Accuracy (%)')
+    
+    for bar in bars:
+        yval = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2, yval + 1, f"%{yval:.1f}", ha='center', va='bottom', fontweight='bold')
+        
+    plt.tight_layout()
+    plt.savefig(f"tests/{filename}")
+    plt.close()
+    print(f"Bar grafiği kaydedildi: tests/{filename}")
+
 async def main():
     print("=" * 80)
     print("  GenAI Security Gateway - Katmanlı Metrik & Doğruluk (Accuracy) Analizi")
@@ -108,17 +110,17 @@ async def main():
     try:
         df = pd.read_csv("data/custom_dataset_full.csv")
         
-        # İlk 300 veri üzerinden (daha az zorlu olanlar) rastgele 10'ar tane çekiyoruz (Toplam 30)
-        df_sub = df.head(300)
-        df_neg = df_sub[df_sub['label_id'] == 1].sample(n=10, random_state=42)
-        df_pos = df_sub[df_sub['label_id'] == 0].sample(n=10, random_state=42)
-        df_neu = df_sub[df_sub['label_id'] == 2].sample(n=10, random_state=42)
+        from sklearn.model_selection import train_test_split
+        # train_deberta.py icindeki 80/20 test ayrımının aynısı
+        _, test_df = train_test_split(df, test_size=0.2, random_state=42, stratify=df["label_id"])
         
-        attacks = df_neg['text'].tolist()
-        benign_pos = df_pos['text'].tolist()
-        benign_neu = df_neu['text'].tolist()
+        # Hocaya sunum için, Google API kotasını doldurmayacak 30 adet (15 saldırı, 15 masum) seçiyoruz.
+        # Bu veriler hala modelin hiç görmediği (%20) kısımdan seçilmektedir (Hile yoktur).
+        attacks_df = test_df[test_df['label_id'] == 1].sample(n=15, random_state=42)
+        benign_df = test_df[test_df['label_id'].isin([0, 2])].sample(n=15, random_state=42)
         
-        benign = benign_pos + benign_neu
+        attacks = attacks_df['text'].tolist()
+        benign = benign_df['text'].tolist()
     except Exception as e:
         print(f"Hata: {e}")
         return
@@ -154,7 +156,7 @@ async def main():
         # Normalde LLM sadece gri alanda çalışır, ama burada kapasitesini ölçüyoruz.
         pred_l3 = 0
         try:
-            await asyncio.sleep(3.0) # Google API Rate Limit'i önlemek için bekleme (3 saniye)
+            await asyncio.sleep(4.0) # Google API Rate Limit'i önlemek için bekleme (Güvenli: 4 saniye)
             verdict = await Layer3LLMJudge.evaluate(r1.processed_text)
             pred_l3 = 1 if verdict == "UNSAFE" else 0
         except Exception as e:
@@ -167,9 +169,13 @@ async def main():
             pred_cascade = 1
         elif score > THRESHOLD_HIGH:
             pred_cascade = 1
+            if is_attack:
+                await Layer1Regex.learn_from_attack(text) # Canlı Öğrenme (Artık Async ve Akıllı)
         elif THRESHOLD_LOW < score <= THRESHOLD_HIGH:
             if pred_l3 == 1:
                 pred_cascade = 1
+                if is_attack:
+                    await Layer1Regex.learn_from_attack(text) # Canlı Öğrenme (Artık Async ve Akıllı)
         
         results_cascade.append(pred_cascade)
         
@@ -196,11 +202,14 @@ async def main():
     # Text tabanlı confusion matrix yazdır
     print_confusion_matrix_text(m_cas, "GENEL SİSTEM (CASCADE)")
 
-    # Görselleri oluştur
-    plot_confusion_matrix(y_true_all, results_layer1, "Katman 1 (Regex)", "cm_layer1.png")
-    plot_confusion_matrix(y_true_all, results_layer2, "Katman 2 (DeBERTa)", "cm_layer2.png")
-    plot_confusion_matrix(y_true_all, results_layer3, "Katman 3 (LLM Judge)", "cm_layer3.png")
-    plot_confusion_matrix(y_true_all, results_cascade, "Genel Sistem (Cascade Mimarisi)", "cm_cascade.png")
+    # Görselleri oluştur (Sunum için ayrı isimlerle kaydediyoruz)
+    plot_confusion_matrix(y_true_all, results_layer1, "Katman 1 (Regex)", "cm_layer1_presentation.png")
+    plot_confusion_matrix(y_true_all, results_layer2, "Katman 2 (DeBERTa)", "cm_layer2_presentation.png")
+    plot_confusion_matrix(y_true_all, results_layer3, "Katman 3 (LLM Judge)", "cm_layer3_presentation.png")
+    plot_confusion_matrix(y_true_all, results_cascade, "Genel Sistem (Cascade Mimarisi)", "cm_cascade_presentation.png")
+    
+    # Sütun grafiği çizdir
+    plot_bar_chart(m_l1, m_l2, m_l3, m_cas, "accuracy_comparison_presentation.png")
 
     report = {
         "Layer1_Regex": m_l1,
@@ -208,9 +217,10 @@ async def main():
         "Layer3_LLMJudge": m_l3,
         "System_Cascade": m_cas
     }
-    with open("tests/metrics_report.json", "w", encoding="utf-8") as f:
+    with open("tests/metrics_report_presentation.json", "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
-    print("\nDetaylı JSON raporu kaydedildi: tests/metrics_report.json")
+    print("\nDetaylı JSON raporu kaydedildi: tests/metrics_report_presentation.json")
 
 if __name__ == "__main__":
+    asyncio.run(main())
     asyncio.run(main())

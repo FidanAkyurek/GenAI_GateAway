@@ -29,3 +29,4 @@ demo_recordings/
 
 # ── VS Code Ayarları (isteğe bağlı, takım ayarlarını paylaşmak istiyorsan kaldır) ──
 .vscode/
+.vscode/.env

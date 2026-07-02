@@ -1,4 +1,5 @@
 import os
+import shutil
 
 # TensorFlow / TensorBoard kaynaklı Protobuf çökmesini engellemek için
 # Bu satırlar HER ZAMAN tüm import'lardan ÖNCE gelmeli!
@@ -16,10 +17,9 @@ try:
     from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer
     import evaluate
     import numpy as np
-    import matplotlib.pyplot as plt
 except ImportError:
     print("Gerekli kutuphaneler eksik! Lutfen calistirin:")
-    print("pip install transformers datasets evaluate accelerate scikit-learn matplotlib")
+    print("pip install transformers datasets evaluate accelerate scikit-learn")
     exit(1)
 
 logging.basicConfig(level=logging.INFO)
@@ -27,9 +27,10 @@ logger = logging.getLogger(__name__)
 
 # Yollar
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_PATH = os.path.join(BASE_DIR, "data", "custom_dataset_full.csv")
+DATA_PATH = os.path.join(BASE_DIR, "data", "custom_dataset_part4.csv")
 MODEL_OUTPUT_DIR = os.path.join(BASE_DIR, "models", "fine_tuned_deberta")
-BASE_MODEL_NAME = "protectai/deberta-v3-base-prompt-injection-v2"
+MODEL_TMP_DIR = os.path.join(BASE_DIR, "models", "fine_tuned_deberta_tmp")
+BASE_MODEL_NAME = MODEL_OUTPUT_DIR
 
 def compute_metrics(eval_pred):
     metric = evaluate.load("accuracy")
@@ -90,13 +91,18 @@ def main():
     )
 
     # 4. Eğitim (Training) Ayarları
-    os.makedirs(MODEL_OUTPUT_DIR, exist_ok=True)
+    if os.path.exists(MODEL_TMP_DIR):
+        shutil.rmtree(MODEL_TMP_DIR)
+
+    os.makedirs(MODEL_TMP_DIR, exist_ok=True)
     training_args = TrainingArguments(
-        output_dir=MODEL_OUTPUT_DIR,
+        output_dir=MODEL_TMP_DIR,
+        overwrite_output_dir=True,
         eval_strategy="epoch",
         learning_rate=2e-5,
-        per_device_train_batch_size=8,
-        per_device_eval_batch_size=8,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=4,
+        per_device_eval_batch_size=2,
         num_train_epochs=3,
         weight_decay=0.01,
         save_strategy="epoch",
@@ -118,57 +124,14 @@ def main():
 
     # 6. Kaydet
     logger.info(f"🎉 Eğitim tamamlandı! Yeni model '{MODEL_OUTPUT_DIR}' klasörüne kaydediliyor.")
-    trainer.save_model(MODEL_OUTPUT_DIR)
-    tokenizer.save_pretrained(MODEL_OUTPUT_DIR)
+    trainer.model.save_pretrained(MODEL_TMP_DIR, safe_serialization=False)
+    tokenizer.save_pretrained(MODEL_TMP_DIR)
+
+    if os.path.exists(MODEL_OUTPUT_DIR):
+        shutil.rmtree(MODEL_OUTPUT_DIR)
+
+    os.replace(MODEL_TMP_DIR, MODEL_OUTPUT_DIR)
     
-<<<<<<< HEAD
-=======
-    # 7. Grafikleri Çizdir (Visualization)
-    logger.info("📊 Eğitim grafikleri hazırlanıyor...")
-    try:
-        history = trainer.state.log_history
-        
-        # Extract losses and accuracies
-        train_loss = [x['loss'] for x in history if 'loss' in x]
-        train_epochs = [x['epoch'] for x in history if 'loss' in x]
-        
-        eval_loss = [x['eval_loss'] for x in history if 'eval_loss' in x]
-        eval_acc = [x['eval_accuracy'] for x in history if 'eval_accuracy' in x]
-        eval_epochs = [x['epoch'] for x in history if 'eval_loss' in x]
-
-        plt.figure(figsize=(14, 5))
-
-        # Loss Graph
-        plt.subplot(1, 2, 1)
-        if train_loss:
-            plt.plot(train_epochs, train_loss, label='Train Loss', marker='o')
-        if eval_loss:
-            plt.plot(eval_epochs, eval_loss, label='Eval Loss', marker='s')
-        plt.title('Model Loss Over Epochs')
-        plt.xlabel('Epochs')
-        plt.ylabel('Loss')
-        plt.legend()
-        plt.grid(True)
-
-        # Accuracy Graph
-        plt.subplot(1, 2, 2)
-        if eval_acc:
-            plt.plot(eval_epochs, eval_acc, label='Eval Accuracy', color='green', marker='s')
-        plt.title('Model Accuracy Over Epochs')
-        plt.xlabel('Epochs')
-        plt.ylabel('Accuracy')
-        plt.legend()
-        plt.grid(True)
-
-        plt.tight_layout()
-        plot_path = os.path.join(MODEL_OUTPUT_DIR, "training_history.png")
-        plt.savefig(plot_path)
-        plt.close()
-        logger.info(f"✅ Grafikler başarıyla kaydedildi: {plot_path}")
-    except Exception as e:
-        logger.error(f"❌ Grafikler çizilirken bir hata oluştu: {e}")
-
->>>>>>> friend/main
     logger.info("✅ GenAI Gateway artık Katman 2'de bu özel modeli kullanacak!")
 
 if __name__ == "__main__":
