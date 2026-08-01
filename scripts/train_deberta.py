@@ -1,4 +1,5 @@
 import os
+import shutil
 
 # TensorFlow / TensorBoard kaynaklı Protobuf çökmesini engellemek için
 # Bu satırlar HER ZAMAN tüm import'lardan ÖNCE gelmeli!
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_PATH = os.path.join(BASE_DIR, "data", "custom_dataset_full.csv")
 MODEL_OUTPUT_DIR = os.path.join(BASE_DIR, "models", "fine_tuned_deberta")
+MODEL_TMP_DIR = os.path.join(BASE_DIR, "models", "fine_tuned_deberta_tmp")
 BASE_MODEL_NAME = "protectai/deberta-v3-base-prompt-injection-v2"
 
 def compute_metrics(eval_pred):
@@ -90,9 +92,12 @@ def main():
     )
 
     # 4. Eğitim (Training) Ayarları
-    os.makedirs(MODEL_OUTPUT_DIR, exist_ok=True)
+    if os.path.exists(MODEL_TMP_DIR):
+        shutil.rmtree(MODEL_TMP_DIR)
+
+    os.makedirs(MODEL_TMP_DIR, exist_ok=True)
     training_args = TrainingArguments(
-        output_dir=MODEL_OUTPUT_DIR,
+        output_dir=MODEL_TMP_DIR,
         eval_strategy="epoch",
         learning_rate=2e-5,
         per_device_train_batch_size=8,
@@ -118,8 +123,13 @@ def main():
 
     # 6. Kaydet
     logger.info(f"🎉 Eğitim tamamlandı! Yeni model '{MODEL_OUTPUT_DIR}' klasörüne kaydediliyor.")
-    trainer.save_model(MODEL_OUTPUT_DIR)
-    tokenizer.save_pretrained(MODEL_OUTPUT_DIR)
+    trainer.model.save_pretrained(MODEL_TMP_DIR, safe_serialization=False)
+    tokenizer.save_pretrained(MODEL_TMP_DIR)
+
+    if os.path.exists(MODEL_OUTPUT_DIR):
+        shutil.rmtree(MODEL_OUTPUT_DIR)
+
+    os.replace(MODEL_TMP_DIR, MODEL_OUTPUT_DIR)
     
 <<<<<<< HEAD
 =======
