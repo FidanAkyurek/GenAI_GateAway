@@ -1,226 +1,251 @@
-# GenAI Gateway Docker + CloudPanel Deployment
+<div align="center">
 
-## Amaç
-Bu rehber, GenAI Gateway projesini Ubuntu sunucunuzda `/opt/GenAI_Gateway` dizinine kurmak, PostgreSQL ile Docker konteynerinde çalıştırmak ve `genai.fjcreativehub.com` üzerinden CloudPanel reverse proxy ile yayınlamak için hazırlanmıştır.
+# 🛡️ GenAI Security Gateway
+
+### *Enterprise-Grade 3-Layer Security Firewall & Proxy for LLMs*
+
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.30%2B-FF4B4B.svg?logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-DeBERTa-EE4C2C.svg?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supported-4169E1.svg?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+
+**GenAI Security Gateway**, yapay zeka (LLM) sistemlerine gönderilen istemleri (prompt'ları) zararlı içeriklere, **Prompt Injection** ve **Jailbreak** saldırılarına, **PII (Kişisel Veri) sızıntılarına (DLP)** ve gizli veri ihlallerine karşı gerçek zamanlı koruyan 3 katmanlı gelişmiş bir güvenlik duvarı ve akıllı proxy sistemidir.
+
+[📌 Özellikler](#-öne-çıkan-özellikler) •
+[🛡️ Güvenlik Mimarisi](#%EF%B8%8F-3-katmanlı-güvenlik-mimarisi) •
+[🚀 Hızlı Başlangıç](#-hızlı-başlangıç) •
+[🐳 Docker Kurulumu](#-docker--sunucu-kurulumu) •
+[📂 Proje Yapısı](#-proje-dizin-yapısı) •
+[📊 Admin Paneli](#-admin-paneli-ve-dashboard)
 
 ---
 
-## 🚀 Projeyi Hızlıca Başlatma (Yerel Ortam)
+</div>
 
-Eğer projeyi sunucuya kurmadan, **kendi bilgisayarınızda (Windows)** hızlıca denemek ve açmak istiyorsanız, proje dizininde aşağıdaki betiklerden birini çalıştırabilirsiniz:
+## 📖 Projenin Amacı ve Neden Gereklidir?
 
-**Windows (Komut Satırı / CMD):**
-```cmd
-start_all.bat
+Büyük Dil Modelleri (LLM'ler), kurumlar ve son kullanıcılar tarafından hızla benimsenirken ciddi **güvenlik tehditlerini** de beraberinde getirmiştir:
+- **Prompt Injection & Jailbreak:** Saldırganların yapay zekayı manipüle ederek sistem talimatlarını aşması veya yasaklı içerik ürettirmesi.
+- **Veri Sızıntısı (DLP & PII):** Kullanıcıların TC Kimlik No, Kredi Kartı, IBAN, API anahtarı veya iç iletişim verilerini istem dışı LLM'lere göndermesi.
+- **Görünürlük ve Denetim Eksikliği:** Hangi kullanıcının LLM'e ne tür istemler gönderdiğinin izlenememesi.
+
+**GenAI Security Gateway**, LLM ile kullanıcı arasına girerek tüm istemlerin **milisaniyeler içerisinde taranıp filtrelenmesini**, zararlı veya hassas içeriklerin engellenmesini ya da anonimleştirilmesini sağlar.
+
+---
+
+## 🛡️ 3 Katmanlı Güvenlik Mimarisi
+
+Sistem, maksimum güvenlik ve minimum gecikme süresi (latency) dengesi için 3 kademeli doğrulama algoritması kullanır:
+
+```mermaid
+flowchart TD
+    A[👤 Kullanıcı / İstemci] -->|1. İstem Gönderir| B[🛡️ GenAI Security Gateway]
+    
+    subgraph Layer 1: Statik & DLP Filtresi
+        B --> C{Layer 1: Regex & PII}
+        C -->|PII / Kara Liste Tespiti| D[🚫 ENGELLE / 🎭 ANONİMLEŞTİR]
+    end
+    
+    subgraph Layer 2: DeBERTa NLP AI Modeli
+        C -->|Temiz| E{Layer 2: DeBERTa Model}
+        E -->|Skor >= Eşik Örn: 0.70| F[🚫 INJECTION ENGELLENDİ]
+    end
+    
+    subgraph Layer 3: LLM Judge
+        E -->|Gri Bölge 0.35 - 0.75| G{Layer 3: LLM Judge}
+        G -->|Derin Analiz: Zararlı| H[🚫 LLM JUDGE ENGELLENDİ]
+        G -->|Derin Analiz: Güvenli| I[✅ GÜVENLİ]
+    end
+    
+    E -->|Skor < 0.35| I
+    I -->|2. İstemi İlet| J[🤖 Hedef LLM OpenAI / Gemini / Ollama]
+    J -->|3. Yanıtı Döndür| A
 ```
 
-**Windows (PowerShell):**
+### 1️⃣ Katman 1: Statik Kural, Kara Liste ve PII/DLP Kontrolü (`< 5ms`)
+- **Ultra Hızlı Filtreleme:** Regex ve kelime dizin tabanlı analiz ile mikrosaniyeler içinde çalışır.
+- **Hassas Veri Tespiti (PII):** TC Kimlik Numarası, Kredi Kartı, IBAN, E-posta adresi, Telefon Numarası ve API Key sızıntılarını anında tespit eder.
+- **Anonimleştirme (Layer 1.5):** İsteğe bağlı olarak hassas verileri `[MASKED_TCKN]` şeklinde maskeleyerek LLM'e iletir.
+
+### 2️⃣ Katman 2: Fine-Tuned DeBERTa AI Modeli (`~20-50ms`)
+- **Doğal Dil İşleme (NLP):** Transformer tabanlı DeBERTa mimarisi kullanılarak karmaşık, dolaylı ve dilsel manipülasyon içeren Prompt Injection ve Jailbreak saldırılarını analiz eder.
+- **Özel Veri Seti:** Türkçe ve İngilizce 1000+'den fazla özel güvenlik veri seti ve sentetik saldırı senaryoları ile eğitilmiştir.
+- **Dinamik Duyarlılık (Threshold):** Yönetim panelinden canlı olarak güvenlik eşik skoru (ör. `0.70`) ayarlanabilir.
+
+### 3️⃣ Katman 3: LLM Judge - Üst Düzey Niyet Analisti (`Grey Zone`)
+- **Derin Anlamsal Karar Verici:** Layer 2'nin kararsız kaldığı "Gri Bölge" (Skor `0.35` - `0.75` arası) istemleri üst seviye bir karar verici LLM'e (ör. GPT-4o-mini / Gemini) sevk eder.
+- **Fail-Closed Güvenlik Prensibi:** Şüpheli durumlarda güvenlik önceliklendirilir.
+
+---
+
+## ✨ Öne Çıkan Özellikler
+
+- ⚡ **Yüksek Performans & Önbellekleme:** In-memory caching ve asenkron mimari sayesinde minimum gecikme.
+- 🎛️ **Gelişmiş Admin & Dashboard Paneli:** Streamlit & HTML/CSS tabanlı interaktif yönetim arayüzü.
+- 🔀 **LLM Proxy Modu:** İstem güvenliyse doğrudan OpenAI, Gemini veya yerel Ollama modellerine şeffaf aktarım.
+- 📊 **Detaylı Loglama & Denetim İzleri:** Her isteğin hangi katmanda engellendiği, gecikme süreleri (ms) ve kategorisi kayıt altına alınır.
+- 🔑 **Şirket ve Kullanıcı Bazlı Yetkilendirme:** JWT tabanlı kimlik doğrulama, oran sınırlaması (Rate Limiting) ve şirket politikası yönetimi.
+- 🛠️ **Dinamik Kara Liste Yönetimi:** Kod yeniden başlatılmadan arayüzden anlık kelime ekleme/çıkarma.
+- 🐳 **Docker & Production Hazır:** Single-command Docker Compose yapısı, PostgreSQL asenkron havuzu ve Reverse Proxy desteği.
+
+---
+
+## 🚀 Hızlı Başlangıç
+
+### Gereksinimler
+- **Python 3.10+**
+- **Git**
+- *(İsteğe Bağlı)* **Docker & Docker Compose**
+
+### 1. Projeyi Klonlayın
+```bash
+git clone https://github.com/FidanAkyurek/GenAI_GateAway.git
+cd GenAI_GateAway/GenAI_Gateway
+```
+
+### 2. Sanal Ortamı Oluşturun ve Bağımlılıkları Yükleyin
+```bash
+# Sanal ortam oluşturma
+python -m venv .venv
+
+# Sanal ortamı aktifleştirme (Windows PowerShell)
+.\.venv\Scripts\Activate.ps1
+
+# (Linux / macOS için: source .venv/bin/activate)
+
+# Bağımlılıkları yükleme
+pip install -r requirements.txt
+```
+
+### 3. Ortam Değişkenlerini Ayarlayın
+`.env.template` dosyasını kopyalayarak `.env` oluşturun:
+```bash
+cp .env.template .env
+```
+`.env` dosyasını düzenleyerek gerekirse `GEMINI_API_KEY`, `JWT_SECRET` vb. anahtarlarınızı girin.
+
+### 4. Tek Tıkla Sistemi Çalıştırın (Windows / Python)
+
+Sistem hem FastAPI arka yüzünü (`http://127.0.0.1:8001`) hem de Streamlit arayüzünü (`http://127.0.0.1:8501`) otomatik olarak başlatır:
+
+**PowerShell ile:**
 ```powershell
 .\start.ps1
 ```
 
-**Python ile (Tüm İşletim Sistemleri):**
+**veya CMD ile:**
+```cmd
+start_all.bat
+```
+
+**veya Çapraz Platform Python Betiği ile:**
 ```bash
 python start_system.py
 ```
-*(Not: Bu komutlar hem FastAPI arka yüzünü hem de Streamlit kullanıcı arayüzünü aynı anda otomatik olarak başlatır ve tarayıcınızı açar.)*
 
 ---
 
-## 1) Sunucuya proje indirme
+## 🐳 Docker & Sunucu Kurulumu
 
-Sunucunuza SSH ile bağlanın ve proje dizinini oluşturun:
-
-```bash
-sudo mkdir -p /opt/GenAI_Gateway
-sudo chown $USER:$USER /opt/GenAI_Gateway
-cd /opt/GenAI_Gateway
-```
-
-Projeyi GitHub veya başka bir kaynaktan indiriyorsanız:
+Üretim ortamında (Production) PostgreSQL veritabanı ile çalıştırmak için Docker Compose kullanabilirsiniz:
 
 ```bash
-git clone <repo-url> /opt/GenAI_Gateway
+# Konteynerleri derleyin ve arka planda çalıştırın
+docker compose up -d --build
+
+# Konteyner durumlarını kontrol edin
+docker compose ps
+
+# Canlı logları izleyin
+docker compose logs -f web
 ```
 
-Eğer proje dosyalarını doğrudan sunucuya yüküyorsanız, `/opt/GenAI_Gateway` içine kopyalayın.
+Uygulama **`http://localhost:8001`** (FastAPI) ve **`http://localhost:8501`** (Streamlit) üzerinde yayına girecektir.
 
 ---
 
-## 2) Docker ve Docker Compose kurma
+## 📊 Admin Paneli ve Dashboard
 
-Ubuntu için aşağıdaki komutları çalıştırın:
+Yönetim paneli üzerinden aşağıdaki işlemler gerçekleştirilebilir:
 
-```bash
-sudo apt update
-sudo apt install -y ca-certificates curl gnupg lsb-release
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
-  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt update
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-```
-
-Kurulum tamamlandıktan sonra Docker servisinin çalıştığını doğrulayın:
-
-```bash
-sudo systemctl enable docker --now
-sudo docker version
-sudo docker compose version
-```
+1. **Güvenlik Dashboard'u:** Anlık istek sayıları, engellenen vs. geçen istek oranları, ortalama yanıt süreleri ve tehdit dağılım grafikleri.
+2. **Canlı Log İnceleme:** Güvenlik loglarını kategoriye (PII, Prompt Injection, Jailbreak) göre filtreleme, ayrıntılı arama ve popup detay görünümü.
+3. **Canlı Sistem Ayarları:**
+   - Katmanları (Layer 1, Layer 2, Layer 3) anlık olarak aktif/pasif yapma.
+   - DeBERTa modelinin duyarlılık eşiğini (Threshold Slider) canlı değiştirme.
+   - Kara liste kelimelerini arayüzden yönetme.
 
 ---
 
-## 3) Proje yapılandırması
+## 📂 Proje Dizin Yapısı
 
-Proje kök dizininde `.env.example` dosyası oluşturuldu. Yeni bir `.env` dosyası oluşturun:
-
-```bash
-cd /opt/GenAI_Gateway
-cp .env.example .env
 ```
-
-`.env` içinde aşağıdaki değerleri ayarlayın:
-
-- `DB_HOST=db`
-- `DB_PORT=5432`
-- `DB_NAME=genai_gateway`
-- `DB_USER=postgres`
-- `DB_PASSWORD=<güçlü-parola>`
-- `JWT_SECRET=<rastgele-gizli-anahtar>`
-- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (OAuth kullanmayacaksanız boş bırakabilirsiniz)
-- `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` (OAuth kullanmayacaksanız boş bırakabilirsiniz)
-- `GEMINI_API_KEY` (OpenAI/Gemini erişimi gerekiyorsa burada girin)
-
-> Not: `.env` dosyası `.dockerignore` içinde listelendiği için Docker imajına dahil edilmez.
-
----
-
-## 4) Docker Compose ile başlatma
-
-```bash
-cd /opt/GenAI_Gateway
-sudo docker compose up -d --build
-```
-
-Bu komut şu servisleri başlatır:
-
-- `web`: FastAPI uygulaması
-- `db`: PostgreSQL veritabanı
-
-Durumu kontrol etmek için:
-
-```bash
-sudo docker compose ps
-sudo docker compose logs -f web
+GenAI_Gateway/
+├── app/                        # 🧠 Backend (FastAPI Core)
+│   ├── main.py                 # FastAPI Giriş Noktası & API Endpoint'leri
+│   ├── config_manager.py       # Dinamik Yapılandırma Yöneticisi
+│   ├── controllers/            # API İstek Kontrolcüleri
+│   ├── models/                 # Pydantic ve Veritabanı Modelleri
+│   └── services/               # 🛡️ Güvenlik Servisleri & Katmanları
+│       ├── layer1_regex.py     # Layer 1: Regex & PII Tespit Servisi
+│       ├── layer1_5_anonymizer.py # Layer 1.5: Maskeleme & Anonimleştirme
+│       ├── layer2_deberta.py   # Layer 2: DeBERTa AI Modeli Servisi
+│       ├── layer3_llm_judge.py # Layer 3: LLM Judge Derin Analiz Servisi
+│       ├── llm_proxy.py        # Akıllı LLM Proxy İletim Servisi
+│       └── database_manager.py # SQLite / PostgreSQL Async Veritabanı Yöneticisi
+├── frontend/                   # 💻 Alternatif HTML/JS/CSS Arayüzü
+├── scripts/                    # 🛠️ Model Eğitimi & Yardımcı Araçlar
+│   ├── train_deberta.py        # DeBERTa Fine-Tuning Eğitimi
+│   └── check_env.py            # Ortam Değişkenleri Doğrulama Betiği
+├── data_generation_scripts/    # 📈 Veri Seti Üretim Betikleri
+├── database_scripts/           # 💾 Veritabanı Sıfırlama & Migration Betikleri
+├── tests/                      # 🧪 Birim ve Entegrasyon Testleri
+├── streamlit_app.py            # 🎛️ Streamlit Admin Paneli & Dashboard
+├── Dockerfile                  # Docker İmaj Yapılandırması
+├── docker-compose.yml          # Multi-Container Orkestrasyonu
+├── start.ps1 / start_all.bat   # 🚀 Hızlı Başlatma Betikleri
+└── requirements.txt            # Python Bağımlılıkları
 ```
 
 ---
 
-## 5) İlk kontroller
+## 🧪 Testler ve Doğrulama
 
-Uygulama ayağa kalktıktan sonra doğrudan sunucuda çalışıp çalışmadığını test edin:
-
-```bash
-curl http://127.0.0.1:8001/api/v1/health
-```
-
-Yanıt `{"status":"healthy",...}` benzeri olmalıdır.
-
----
-
-## 6) CloudPanel Reverse Proxy ayarı
-
-CloudPanel yönetim paneline gidin ve alan adının (`genai.fjcreativehub.com`) reverse proxy ayarını yapın.
-
-CloudPanel üzerinde:
-
-1. `Websites` alanına gidin.
-2. `genai.fjcreativehub.com` alan adını ekleyin veya mevcut siteyi seçin.
-3. `Reverse Proxy` bölümünde aşağıdaki ayarları yapın:
-   - `Proxy HTTP` için hedef: `http://127.0.0.1:8001`
-   - `Proxy HTTPS` için hedef: `http://127.0.0.1:8001`
-4. Gerekirse `SSL/TLS` ayarlarını etkinleştirin.
-5. `Restart` veya `Apply` ile servisi yeniden başlatın.
-
-> Not: Uygulama zaten Docker üzerinde 8001 portunda çalıştığı için CloudPanel sadece bu portu yönlendirir.
-
----
-
-## 7) PostgreSQL veri kalıcılığı
-
-`docker-compose.yml` içerisinde aşağıdaki kalıcı veri hacmi tanımlandı:
-
-```yaml
-volumes:
-  genai_gateway_pgdata:
-```
-
-Bu sayede PostgreSQL verileri konteyner yeniden başlasa bile korunur.
-
----
-
-## 8) Yönetim hesabı
-
-Sunucu ilk başlatıldığında uygulama otomatik olarak `superadmin` kullanıcısını oluşturur ve varsayılan şifre:
-
-- `superadmin` / `superadmin123`
-
-Bu şifreyi hemen değiştirin.
-
----
-
-## 9) Sunucu üzerinde /opt dizinine kurulum
-
-Proje kök dizini önerisi:
+Sistemin güvenlik katmanlarını ve API endpoint'lerini test etmek için test paketini çalıştırabilirsiniz:
 
 ```bash
-/opt/GenAI_Gateway
+pytest tests/
 ```
 
-Bu dizin altında `Dockerfile`, `docker-compose.yml`, `.env`, `app/`, `database_scripts/` vb. dosyalar yer alır.
-
----
-
-## 10) Kalıcı çalışma ve yeniden başlatma
-
-Sunucu yeniden başlatıldığında hizmetin otomatik başlaması için Docker Compose ile cron veya systemd kullanabilirsiniz.
-
-Basitçe `docker compose` ile yeniden başlatma:
-
+Sentetik veri üreterek yük testi simülasyonu yapmak için:
 ```bash
-cd /opt/GenAI_Gateway
-sudo docker compose up -d
+python data_generation_scripts/generate_synthetic_massive_dataset.py
 ```
 
 ---
 
-## 11) Önerilen ek iyileştirmeler
+## 🤝 Katkıda Bulunma
 
-- Production için `CORS` izinlerini sadece gerekli domainlerle sınırlandırın.
-- `JWT_SECRET` değerini güçlü bir rastgele anahtar yapın.
-- `GOOGLE_CLIENT_*` ve `GITHUB_CLIENT_*` değerlerini doğru OAuth redirect URI ile güncelleyin.
-- CloudPanel üzerinde HTTPS zorunlu hale getirin.
-- Uygulamayı `systemd` veya CloudPanel `Docker` desteği ile daha otomatik başlatabilirsiniz.
+1. Bu depoyu çatallayın (Fork).
+2. Yeni bir özellik dalı oluşturun (`git checkout -b feature/YeniOzellik`).
+3. Değişikliklerinizi işleyin (`git commit -m 'feat: Yeni özellik eklendi'`).
+4. Dalınıza itin (`git push origin feature/YeniOzellik`).
+5. Bir Çekme İsteği (Pull Request) açın.
 
-## OAuth Redirect URI Ayarları
+---
 
-CloudPanel veya OAuth sağlayıcılarında (Google/Github) uygulamanızı kaydederken aşağıdaki `redirect_uri` değerlerini kullanın (veya kendi domaininizin doğru yolunu gösterin):
+## 📝 Lisans
 
-```
-https://genai.fjcreativehub.com/api/v1/auth/google/callback
-https://genai.fjcreativehub.com/api/v1/auth/github/callback
-```
+Bu proje **MIT Lisansı** altında lisanslanmıştır.
 
-Eğer farklı bir path kullanıyorsanız `.env` içindeki `OAUTH_REDIRECT_GOOGLE` ve `OAUTH_REDIRECT_GITHUB` değerlerini güncelleyin.
+---
 
-## `.env` doğrulama
+<div align="center">
 
-Sunucuya aktarmadan önce aşağıdaki komutla temel doğrulamayı çalıştırın:
+Geliştirici: **[Fidan Akyürek](https://github.com/FidanAkyurek)**
 
-```bash
-python3 scripts/check_env.py
-```
+*GenAI Security Gateway — Yapay Zeka Sistemleriniz İçin Güvenli Gelecek.*
 
-Bu betik; eksik `DB_*` değerlerini, `JWT_SECRET` uzunluğunu ve OAuth redirect ayarlarını kontrol eder ve uyarılar verir.
+</div>
